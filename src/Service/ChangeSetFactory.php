@@ -414,7 +414,7 @@ class ChangeSetFactory
 									$value->__load();
 								}
 							}
-							bd ($value);
+
 							$fieldValue = $this->em->getClassMetadata(ClassUtils::getClass($value))
 								->getFieldValue($value, $fieldNamePart);
 							if (is_array($fieldValue) || $fieldValue instanceof \Traversable) {
@@ -433,8 +433,6 @@ class ChangeSetFactory
 			}
 			$id = $metadata->getIdentifierValues($entity);
 			$identification = new CS\Id(implode('-', $id), $class, $identificationData);
-
-			bd ($identification);
 
 			$this->identifications[$entityHash] = $identification;
 		}
