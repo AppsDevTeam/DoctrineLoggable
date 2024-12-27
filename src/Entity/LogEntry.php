@@ -13,6 +13,7 @@ use Doctrine\ORM\Mapping as ORM;
  */
 #[ORM\Table]
 #[ORM\Index(name: 'log_entity_lookup_idx', columns: ['object_id', 'object_class'])]
+#[ORM\Index(fields: ['loggedAt'])]
 #[ORM\Entity]
 class LogEntry
 {
