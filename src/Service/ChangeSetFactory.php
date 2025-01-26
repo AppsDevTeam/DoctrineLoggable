@@ -190,6 +190,11 @@ class ChangeSetFactory
 	 */
 	public function processLoggedEntity($entity, $relatedEntity = null): void
 	{
+		// pokud je to primarni entitu a je to vlozeni, nelogujeme
+		if (!$relatedEntity && !$this->getIdentifier($entity)) {
+			return;
+		}
+
 		$changeSet = $this->getChangeSet($entity, $relatedEntity);
 		if (!$changeSet->isChanged()) {
 			return;
@@ -529,7 +534,7 @@ class ChangeSetFactory
 		$logEntry->setUserId($this->userIdProvider->getId());
 		$logEntry->setLoggedNow();
 		$logEntry->setObjectClass($metadata->name);
-		$logEntry->setObjectId(array_values($metadata->getIdentifierValues($entity))[0]);
+		$logEntry->setObjectId($this->getIdentifier($entity));
 		$logEntry->setAction(CS\ChangeSet::ACTION_EDIT);
 
 		$this->logEntries[spl_object_hash($entity)] = $logEntry;
@@ -560,5 +565,10 @@ class ChangeSetFactory
 		$this->em = $em;
 		$this->uow = $this->em->getUnitOfWork();
 		return $this;
+	}
+
+	private function getIdentifier($entity): ?int
+	{
+		return $entity->getId();
 	}
 }
