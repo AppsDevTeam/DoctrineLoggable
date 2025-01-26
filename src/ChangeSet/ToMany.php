@@ -24,7 +24,7 @@ class ToMany extends PropertyChangeSet
 			count($this->ch) > 0;
 	}
 
-	public function addChangeSet(ChangeSet $changeSet = NULL)
+	public function addChangeSet(?ChangeSet $changeSet = NULL)
 	{
 		if ($changeSet !== NULL && $changeSet->isChanged()) {
 			if (($k = array_search($changeSet, $this->ch)) === FALSE) {
