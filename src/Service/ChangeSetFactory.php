@@ -529,7 +529,7 @@ class ChangeSetFactory
 		$logEntry->setUserId($this->userIdProvider->getId());
 		$logEntry->setLoggedNow();
 		$logEntry->setObjectClass($metadata->name);
-		$logEntry->setObjectId(implode('-', $metadata->getIdentifierValues($entity)));
+		$logEntry->setObjectId(array_values($metadata->getIdentifierValues($entity))[0]);
 		$logEntry->setAction(CS\ChangeSet::ACTION_EDIT);
 
 		$this->logEntries[spl_object_hash($entity)] = $logEntry;
