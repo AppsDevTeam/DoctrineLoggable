@@ -199,9 +199,7 @@ class ChangeSetFactory
 		if (!$changeSet->isChanged()) {
 			return;
 		}
-		$logEntry = $this->getLogEntry($entity);
-		$logEntry->setChangeset($changeSet);
-		$this->em->getUnitOfWork()->computeChangeSet($this->em->getClassMetadata(get_class($logEntry)), $logEntry);
+		$this->updateLogEntry($entity, $changeSet);
 	}
 
 	public function updateIdentification($entity): void
@@ -519,28 +517,28 @@ class ChangeSetFactory
 	/**
 	 * @throws ORMException
 	 */
-	public function getLogEntry($entity): LogEntry
+	public function updateLogEntry($entity, ChangeSet $changeSet)
 	{
 		$soh = spl_object_hash($entity);
-		if (isset($this->logEntries[$soh])) {
-			return $this->logEntries[$soh];
+		$logEntry = $this->logEntries[$soh] ?? null;
+		if (!$logEntry) {
+			$logEntryClass = $this->getLogEntryClass();
+			$logEntry = new $logEntryClass;
+			$logEntry->setUserId($this->userIdProvider->getId());
+			$logEntry->setLoggedNow();
+			$logEntry->setObjectClass($this->em->getClassMetadata(get_class($entity))->name);
+			$logEntry->setObjectId($this->getIdentifier($entity));
+			$logEntry->setAction(CS\ChangeSet::ACTION_EDIT);
 		}
+		$logEntry->setChangeset($changeSet);
+		if (!isset($this->logEntries[$soh])) {
+			$this->em->persist($logEntry);
+			$this->em->getUnitOfWork()->computeChangeSet($this->em->getClassMetadata(get_class($logEntry)), $logEntry);
+			$this->logEntries[spl_object_hash($entity)] = $logEntry;
 
-		$metadata = $this->em->getClassMetadata(get_class($entity));
-
-		$logEntryClass = $this->getLogEntryClass();
-
-		$logEntry = new $logEntryClass;
-		$logEntry->setUserId($this->userIdProvider->getId());
-		$logEntry->setLoggedNow();
-		$logEntry->setObjectClass($metadata->name);
-		$logEntry->setObjectId($this->getIdentifier($entity));
-		$logEntry->setAction(CS\ChangeSet::ACTION_EDIT);
-
-		$this->logEntries[spl_object_hash($entity)] = $logEntry;
-		$this->em->persist($logEntry);
-
-		return $logEntry;
+		} else {
+			$this->em->getUnitOfWork()->recomputeSingleEntityChangeSet($this->em->getClassMetadata(get_class($logEntry)), $logEntry);
+		}
 	}
 
 	/**
