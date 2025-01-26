@@ -63,7 +63,7 @@ class ChangeSetRenderer
 		echo ")";
 	}
 	
-	protected function renderIdentification(Id $identification = NULL)
+	protected function renderIdentification(?Id $identification = NULL)
 	{
 		if ($identification === NULL) {
 			echo "NULL";
