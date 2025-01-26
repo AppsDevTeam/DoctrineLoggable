@@ -1,6 +1,6 @@
 <?php
 
-namespace Adt\DoctrineLoggable;
+namespace ADT\DoctrineLoggable;
 
 interface Exception
 {

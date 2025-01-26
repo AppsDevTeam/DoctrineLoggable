@@ -1,12 +1,12 @@
 <?php
 
-namespace Adt\DoctrineLoggable\Rendering;
+namespace ADT\DoctrineLoggable\Rendering;
 
-use Adt\DoctrineLoggable\ChangeSet\ChangeSet;
-use Adt\DoctrineLoggable\ChangeSet\Id;
-use Adt\DoctrineLoggable\ChangeSet\Scalar;
-use Adt\DoctrineLoggable\ChangeSet\ToMany;
-use Adt\DoctrineLoggable\ChangeSet\ToOne;
+use ADT\DoctrineLoggable\ChangeSet\ChangeSet;
+use ADT\DoctrineLoggable\ChangeSet\Id;
+use ADT\DoctrineLoggable\ChangeSet\Scalar;
+use ADT\DoctrineLoggable\ChangeSet\ToMany;
+use ADT\DoctrineLoggable\ChangeSet\ToOne;
 use Nette\Utils\Strings;
 
 class ChangeSetRenderer

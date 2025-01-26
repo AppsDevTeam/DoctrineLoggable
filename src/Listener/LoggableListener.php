@@ -1,24 +1,26 @@
 <?php
 
-namespace Adt\DoctrineLoggable\Listener;
+namespace ADT\DoctrineLoggable\Listener;
 
-use Adt\DoctrineLoggable\Service\ChangeSetFactory;
+use ADT\DoctrineLoggable\Service\ChangeSetFactory;
 use Doctrine\Common\EventSubscriber;
 use Doctrine\Common\Util\ClassUtils;
-use Doctrine\ORM\Event\LifecycleEventArgs;
 use Doctrine\ORM\Event\OnFlushEventArgs;
+use Doctrine\ORM\Event\PostPersistEventArgs;
+use Doctrine\ORM\Exception\ORMException;
+use Doctrine\Persistence\Mapping\MappingException;
+use ReflectionException;
 
 class LoggableListener implements EventSubscriber
 {
-	/** @var ChangeSetFactory */
-	private $changeSetFactory;
+	private ChangeSetFactory $changeSetFactory;
 
 	public function __construct(ChangeSetFactory $changeSetFactory)
 	{
 		$this->changeSetFactory = $changeSetFactory;
 	}
 
-	function getSubscribedEvents()
+	function getSubscribedEvents(): array
 	{
 		return [
 			'onFlush',
@@ -26,17 +28,23 @@ class LoggableListener implements EventSubscriber
 		];
 	}
 
-	public function onFlush(OnFlushEventArgs $eventArgs)
+	/**
+	 * @throws ReflectionException
+	 * @throws ORMException|MappingException
+	 */
+	public function onFlush(OnFlushEventArgs $eventArgs): void
 	{
-		$this->changeSetFactory->setEntityManager($eventArgs->getEntityManager());
+		$em = $eventArgs->getObjectManager();
+
+		$this->changeSetFactory->setEntityManager($em);
 
 		// musi se vytvorit struktura asociaci,
 		// protoze pokud ma loggableEntity OneToOne nebo OneToMany vazby s nastavenym loggableProperty,
 		// ve kterych dojde ke zmene, tak v getScheduledEntity metodach bude jen tato kolekce,
 		// ale nebude tu materska entita, ktera ma nastaveno loggableEntity, a tudiz nedojde k zalogovani
 		$structure = $this->changeSetFactory->getLoggableEntityAssociationStructure();
-		
-		$uow = $eventArgs->getEntityManager()->getUnitOfWork();
+
+		$uow = $em->getUnitOfWork();
 
 		foreach (['getScheduledEntityInsertions', 'getScheduledEntityUpdates', 'getScheduledEntityDeletions'] as $method) {
 			foreach (call_user_func([$uow, $method]) as $entity) {
@@ -55,10 +63,9 @@ class LoggableListener implements EventSubscriber
 		}
 	}
 
-	public function postPersist(LifecycleEventArgs $args)
+	public function postPersist(PostPersistEventArgs $args): void
 	{
 		$object = $args->getObject();
 		$this->changeSetFactory->updateIdentification($object);
 	}
-
 }

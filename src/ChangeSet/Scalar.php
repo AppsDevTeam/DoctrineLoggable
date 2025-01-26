@@ -2,7 +2,7 @@
 
 namespace Adt\DoctrineLoggable\ChangeSet;
 
-use Adt\DoctrineLoggable\UnexpectedValueException;
+use ADT\DoctrineLoggable\UnexpectedValueException;
 
 class Scalar extends PropertyChangeSet
 {

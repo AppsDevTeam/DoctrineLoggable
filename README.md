@@ -12,7 +12,7 @@
 
     ```neon
     extensions:
-        - Adt\DoctrineLoggable\DI\LoggableExtension
+        - ADT\DoctrineLoggable\DI\LoggableExtension
     ```
         
 3. Do database migrations
@@ -23,7 +23,7 @@
 <?php
 
 use Doctrine\ORM\Mapping as ORM;
-use Adt\DoctrineLoggable\Annotations as ADA;
+use ADT\DoctrineLoggable\Attributes as ADA;
 	
 /**
  * @ORM\Entity

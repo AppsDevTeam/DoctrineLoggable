@@ -1,180 +1,101 @@
 <?php
 
-namespace Adt\DoctrineLoggable\Entity;
+namespace ADT\DoctrineLoggable\Entity;
 
-use Adt\DoctrineLoggable\ChangeSet\ChangeSet;
+use ADT\DoctrineLoggable\ChangeSet\ChangeSet;
+use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 
-/**
- * @ORM\Entity()
- * @ORM\Table(
- * 	indexes={@ORM\Index(name="log_entity_lookup_idx", columns={"object_id", "object_class"})}
- * )
- */
-#[ORM\Table]
-#[ORM\Index(name: 'log_entity_lookup_idx', columns: ['object_id', 'object_class'])]
+#[ORM\Index(name: 'log_entity_lookup_idx', fields: ['objectId', 'objectClass'])]
 #[ORM\Index(fields: ['loggedAt'])]
 #[ORM\Entity]
 class LogEntry
 {
-	const ACTION_CREATE = 'create';
-	const ACTION_UPDATE = 'update';
-	const ACTION_REMOVE = 'remove';
-
-	/**
-	 * @ORM\Id
-	 * @ORM\Column(type="integer")
-	 * @ORM\GeneratedValue
-	 * @var integer
-	 */
 	#[ORM\Id]
-	#[ORM\Column(type: 'integer')]
+	#[ORM\Column]
 	#[ORM\GeneratedValue]
-	protected $id;
+	private ?int $id = null;
 
-	/**
-	 * @var string $action
-	 *
-	 * @ORM\Column(type="string", length=8)
-	 */
-	#[ORM\Column(type: 'string', length: 8)]
-	protected $action;
+	#[ORM\Column(length: 8, nullable: false)]
+	private string $action;
 
-	/**
-	 * @var string $loggedAt
-	 *
-	 * @ORM\Column(type="datetime")
-	 */
-	#[ORM\Column(type: 'datetime')]
-	protected $loggedAt;
+	#[ORM\Column(nullable: false)]
+	private DateTimeImmutable $loggedAt;
 
-	/**
-	 * @var string $objectId
-	 *
-	 * @ORM\Column(type="integer", name="object_id", nullable=true)
-	 */
-	#[ORM\Column(type: 'integer', name: 'object_id', nullable: true)]
-	protected $objectId;
+	#[ORM\Column(nullable: true)]
+	private int $objectId;
 
-	/**
-	 * @var string $objectClass
-	 *
-	 * @ORM\Column(type="string", name="object_class")
-	 */
-	#[ORM\Column(type: 'string', name: 'object_class')]
-	protected $objectClass;
+	#[ORM\Column(nullable: false)]
+	private string $objectClass;
 
-	/**
-	 * @ORM\Column(type="object")
-	 */
-	#[ORM\Column(type: 'object')]
-	protected $changeSet;
+	#[ORM\Column(type: 'text', nullable: false)]
+	private string $changeSet;
 
-	/**
-	 * @ORM\Column(type="integer", nullable=true)
-	 */
-	#[ORM\Column(type: 'integer', nullable: true)]
-	protected $userId;
+	#[ORM\Column(nullable: true)]
+	private ?int $userId = null;
 
-	public function setLoggedNow()
+	public function setLoggedNow(): void
 	{
-		$this->loggedAt = new \DateTime();
+		$this->loggedAt = new DateTimeImmutable();
 	}
 
-	/**
-	 * @return int
-	 */
-	public function getId()
+	public function getId(): int
 	{
 		return $this->id;
 	}
 
-	/**
-	 * @return string
-	 */
-	public function getAction()
+	public function getAction(): string
 	{
 		return $this->action;
 	}
 
-	/**
-	 * @param string $action
-	 */
-	public function setAction($action)
+	public function setAction(string $action): void
 	{
 		$this->action = $action;
 	}
 
-	/**
-	 * @return string
-	 */
-	public function getLoggedAt()
+	public function getLoggedAt(): DateTimeImmutable
 	{
 		return $this->loggedAt;
 	}
 
-	/**
-	 * @return string
-	 */
-	public function getObjectId()
+	public function getObjectId(): int
 	{
 		return $this->objectId;
 	}
 
-	/**
-	 * @param string $objectId
-	 */
-	public function setObjectId($objectId)
+	public function setObjectId(int $objectId): void
 	{
 		$this->objectId = $objectId;
 	}
 
-	/**
-	 * @return string
-	 */
-	public function getObjectClass()
+	public function getObjectClass(): string
 	{
 		return $this->objectClass;
 	}
 
-	/**
-	 * @param string $objectClass
-	 */
-	public function setObjectClass($objectClass)
+	public function setObjectClass(string $objectClass): void
 	{
 		$this->objectClass = $objectClass;
 	}
 
-	/**
-	 * @return ChangeSet
-	 */
-	public function getChangeSet()
+	public function getChangeSet(): ChangeSet
 	{
-		return $this->changeSet;
+		return unserialize($this->changeSet);
 	}
 
-	/**
-	 * @param ChangeSet $changeSet
-	 */
-	public function setChangeSet(ChangeSet $changeSet)
+	public function setChangeSet(ChangeSet $changeSet): void
 	{
-		$this->changeSet = $changeSet;
+		$this->changeSet = serialize($changeSet);
 	}
 
-	/**
-	 * @return mixed
-	 */
-	public function getUserId()
+	public function getUserId(): ?int
 	{
 		return $this->userId;
 	}
 
-	/**
-	 * @param mixed $userId
-	 */
-	public function setUserId($userId)
+	public function setUserId(?int $userId): void
 	{
 		$this->userId = $userId;
 	}
-
 }
