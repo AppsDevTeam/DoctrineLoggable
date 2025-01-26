@@ -19,7 +19,7 @@ class ToOne extends PropertyChangeSet
 	 * @param Id|NULL $oldIdentification
 	 * @param Id|NULL $newIdentification
 	 */
-	public function __construct($name, Id $oldIdentification = NULL, Id $newIdentification = NULL)
+	public function __construct($name, ?Id $oldIdentification = NULL, ?Id $newIdentification = NULL)
 	{
 		parent::__construct($name);
 		$this->o = $oldIdentification;
@@ -37,7 +37,7 @@ class ToOne extends PropertyChangeSet
 	/**
 	 * @param ChangeSet|NULL $entity
 	 */
-	public function setChangeSet(ChangeSet $entity = NULL)
+	public function setChangeSet(?ChangeSet $entity = NULL)
 	{
 		if ($entity !== NULL && $entity->isChanged()) {
 			$this->ch = $entity;
