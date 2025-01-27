@@ -190,8 +190,8 @@ class ChangeSetFactory
 	 */
 	public function processLoggedEntity($entity, $relatedEntity = null): void
 	{
-		// pokud je to primarni entitu a je to vlozeni, nelogujeme
-		if (!$relatedEntity && !$this->getIdentifier($entity)) {
+		// pokud primarni entita nema id, nelogujeme, je to vlozeni
+		if (!$this->getIdentifier($entity)) {
 			return;
 		}
 
