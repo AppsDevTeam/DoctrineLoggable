@@ -14,7 +14,8 @@ class LoggableExtension extends CompilerExtension
 		$builder = $this->getContainerBuilder();
 
 		$builder->addDefinition($this->prefix('changeSetFactory'))
-			->setFactory(ChangeSetFactory::class);
+			->setFactory(ChangeSetFactory::class)
+			->addSetup('setEntityManager', ['@nettrine.orm.managers.logdb.entityManagerDecorator']);
 	}
 
 	public function beforeCompile(): void
@@ -24,7 +25,7 @@ class LoggableExtension extends CompilerExtension
 		// intentionally registered here instead of in loadConfiguration to avoid autoregistration
 		// in nettrine dbal extension
 		$builder->addDefinition($this->prefix('listener'))
-			->setFactory(LoggableListener::class);
+			->setFactory(LoggableListener::class, ['@' . $this->prefix('changeSetFactory')]);
 		$builder->getDefinition($builder->getByType(EventManager::class))
 			->addSetup('addEventSubscriber', ['@' . $this->prefix('listener')]);
 	}

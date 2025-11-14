@@ -11,6 +11,7 @@ use DateTimeInterface;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\Common\Util\ClassUtils;
 use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Exception\ORMException;
 use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\ORM\Mapping\Column;
@@ -30,7 +31,7 @@ use Traversable;
 
 class ChangeSetFactory
 {
-	protected EntityManager $em;
+	protected EntityManagerInterface $em;
 
 	protected UnitOfWork $uow;
 
@@ -563,6 +564,11 @@ class ChangeSetFactory
 		$this->em = $em;
 		$this->uow = $this->em->getUnitOfWork();
 		return $this;
+	}
+
+	public function getEntityManager(): EntityManagerInterface
+	{
+		return $this->em;
 	}
 
 	private function getIdentifier($entity): ?int

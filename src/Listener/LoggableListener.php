@@ -34,17 +34,13 @@ class LoggableListener implements EventSubscriber
 	 */
 	public function onFlush(OnFlushEventArgs $eventArgs): void
 	{
-		$em = $eventArgs->getObjectManager();
-
-		$this->changeSetFactory->setEntityManager($em);
-
 		// musi se vytvorit struktura asociaci,
 		// protoze pokud ma loggableEntity OneToOne nebo OneToMany vazby s nastavenym loggableProperty,
 		// ve kterych dojde ke zmene, tak v getScheduledEntity metodach bude jen tato kolekce,
 		// ale nebude tu materska entita, ktera ma nastaveno loggableEntity, a tudiz nedojde k zalogovani
 		$structure = $this->changeSetFactory->getLoggableEntityAssociationStructure();
 
-		$uow = $em->getUnitOfWork();
+		$uow = $eventArgs->getObjectManager()->getUnitOfWork();
 
 		foreach (['getScheduledEntityInsertions', 'getScheduledEntityUpdates', 'getScheduledEntityDeletions'] as $method) {
 			foreach (call_user_func([$uow, $method]) as $entity) {
