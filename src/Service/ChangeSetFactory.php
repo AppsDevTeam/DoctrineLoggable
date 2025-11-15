@@ -6,7 +6,7 @@ use Adt\DoctrineLoggable\ChangeSet AS CS;
 use ADT\DoctrineLoggable\Attributes AS DLA;
 use ADT\DoctrineLoggable\ChangeSet\ChangeSet;
 use Adt\DoctrineLoggable\ChangeSet\ToMany;
-use ADT\DoctrineLoggable\Entity\LogEntry;
+use ADT\DoctrineLoggable\Entity\ChangeLog;
 use DateTimeInterface;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\Common\Util\ClassUtils;
@@ -36,8 +36,6 @@ class ChangeSetFactory
 
 	private DLA\AttributeReader $reader;
 
-	protected string $logEntryClass = LogEntry::class;
-
 	protected array $loggableEntityClasses = [];
 
 	protected array $loggableEntityProperties = [];
@@ -45,7 +43,7 @@ class ChangeSetFactory
 	/**
 	 * List of all log entries
 	 *
-	 * @var LogEntry[]
+	 * @var ChangeLog[]
 	 */
 	protected array $logEntries = [];
 
@@ -517,15 +515,14 @@ class ChangeSetFactory
 	/**
 	 * @throws ORMException
 	 */
-	public function updateLogEntry($entity, ChangeSet $changeSet)
+	public function updateLogEntry($entity, ChangeSet $changeSet): void
 	{
 		$soh = spl_object_hash($entity);
 		$logEntry = $this->logEntries[$soh] ?? null;
 		if (!$logEntry) {
-			$logEntryClass = $this->getLogEntryClass();
-			$logEntry = new $logEntryClass;
-			$logEntry->setUserId($this->userIdProvider->getId());
-			$logEntry->setLoggedNow();
+			$logEntry = new ChangeLog();
+			$logEntry->setIdentityClass(ClassUtils::getClass($this->userIdProvider->getIdentity()));
+			$logEntry->setIdentityId($this->userIdProvider->getId());
 			$logEntry->setObjectClass($this->em->getClassMetadata(get_class($entity))->name);
 			$logEntry->setObjectId($this->getIdentifier($entity));
 			$logEntry->setAction(CS\ChangeSet::ACTION_EDIT);
@@ -539,19 +536,6 @@ class ChangeSetFactory
 		} else {
 			$this->em->getUnitOfWork()->recomputeSingleEntityChangeSet($this->em->getClassMetadata(get_class($logEntry)), $logEntry);
 		}
-	}
-
-	/**
-	 * @return string
-	 */
-	public function getLogEntryClass(): string
-	{
-		return $this->logEntryClass;
-	}
-
-	public function setLogEntryClass(string $logEntryClass): void
-	{
-		$this->logEntryClass = $logEntryClass;
 	}
 
 	/**
