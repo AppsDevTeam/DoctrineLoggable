@@ -521,7 +521,7 @@ class ChangeSetFactory
 		$logEntry = $this->logEntries[$soh] ?? null;
 		if (!$logEntry) {
 			$logEntry = new ChangeLog();
-			$logEntry->setIdentityClass(ClassUtils::getClass($this->userIdProvider->getIdentity()));
+			$logEntry->setIdentityClass($this->userIdProvider->getId() ? ClassUtils::getClass($this->userIdProvider->getIdentity()) : null);
 			$logEntry->setIdentityId($this->userIdProvider->getId());
 			$logEntry->setObjectClass($this->em->getClassMetadata(get_class($entity))->name);
 			$logEntry->setObjectId($this->getIdentifier($entity));
