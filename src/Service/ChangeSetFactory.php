@@ -144,7 +144,6 @@ class ChangeSetFactory
 			if (is_array($propertyStructure)) {
 				foreach ($propertyStructure as $propertyName) {
 					$property = new ReflectionProperty($associationEntityClassName, $propertyName);
-					$property->setAccessible(true);
 					$value = $property->getValue($associationEntity);
 
 					// pokud neni nastavena hodnota, vime ze jsme ve spatne ceste
@@ -304,7 +303,6 @@ class ChangeSetFactory
 		}
 
 		/** @var PersistentCollection $collection */
-		$property->setAccessible(TRUE);
 		$collection = $property->getValue($entity);
 
 		if ($collection instanceof PersistentCollection) {
