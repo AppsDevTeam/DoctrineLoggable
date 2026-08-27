@@ -3,6 +3,7 @@
 namespace ADT\DoctrineLoggable\Entity;
 
 use ADT\DoctrineLoggable\ChangeSet\ChangeSet;
+use ADT\DoctrineLoggable\Doctrine\ChangeSetType;
 use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 
@@ -29,8 +30,8 @@ class ChangeLog
 	#[ORM\Column(nullable: true)]
 	private ?int $objectId = null;
 
-	#[ORM\Column(type: 'blob', nullable: false)]
-	private $changeSet; // string/resource
+	#[ORM\Column(type: ChangeSetType::NAME, nullable: false)]
+	private ChangeSet $changeSet;
 
 	#[ORM\Column(nullable: true)]
 	private ?string $identityClass = null;
@@ -85,14 +86,12 @@ class ChangeLog
 
 	public function getChangeSet(): ChangeSet
 	{
-		$this->changeSet = is_resource($this->changeSet) ? stream_get_contents($this->changeSet) : $this->changeSet;
-
-		return unserialize($this->changeSet);
+		return $this->changeSet;
 	}
 
 	public function setChangeSet(ChangeSet $changeSet): void
 	{
-		$this->changeSet = serialize($changeSet);
+		$this->changeSet = $changeSet;
 	}
 
 	public function getIdentityClass(): ?string

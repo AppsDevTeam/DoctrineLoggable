@@ -1,6 +1,6 @@
 <?php
 
-namespace Adt\DoctrineLoggable\ChangeSet;
+namespace ADT\DoctrineLoggable\ChangeSet;
 
 class Id
 {

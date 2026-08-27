@@ -1,6 +1,6 @@
 <?php
 
-namespace Adt\DoctrineLoggable\ChangeSet;
+namespace ADT\DoctrineLoggable\ChangeSet;
 
 class ToOne extends PropertyChangeSet
 {
@@ -76,9 +76,14 @@ class ToOne extends PropertyChangeSet
 		return self::TYPE_TO_ONE;
 	}
 
-	function __sleep()
+	/**
+	 * Assigns the change set without the isChanged() filter used by setChangeSet().
+	 *
+	 * @internal used by the serializer
+	 */
+	public function restoreChangeSet(?ChangeSet $changeSet): void
 	{
-		return ['o', 'n', 'ch'];
+		$this->ch = $changeSet;
 	}
 
 	/**

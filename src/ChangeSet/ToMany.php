@@ -1,6 +1,6 @@
 <?php
 
-namespace Adt\DoctrineLoggable\ChangeSet;
+namespace ADT\DoctrineLoggable\ChangeSet;
 
 class ToMany extends PropertyChangeSet
 {
@@ -112,11 +112,22 @@ class ToMany extends PropertyChangeSet
 
 	public function getType()
 	{
-		return self::TYPE_TO_MANNY;
+		return self::TYPE_TO_MANY;
 	}
 
-	public function __sleep()
+	/**
+	 * Assigns the whole collection change without the lookups done by addAdded(), addRemoved()
+	 * and addChangeSet(). Those compare objects by value, which would fatal on a cyclic graph.
+	 *
+	 * @param Id[] $added
+	 * @param Id[] $removed
+	 * @param ChangeSet[] $changeSets
+	 * @internal used by the serializer
+	 */
+	public function restore(array $added, array $removed, array $changeSets): void
 	{
-		return ['r', 'a', 'ch'];
+		$this->a = array_values($added);
+		$this->r = array_values($removed);
+		$this->ch = array_values($changeSets);
 	}
 }

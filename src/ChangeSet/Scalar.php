@@ -1,6 +1,6 @@
 <?php
 
-namespace Adt\DoctrineLoggable\ChangeSet;
+namespace ADT\DoctrineLoggable\ChangeSet;
 
 use ADT\DoctrineLoggable\UnexpectedValueException;
 
@@ -59,10 +59,5 @@ class Scalar extends PropertyChangeSet
 	public function getType()
 	{
 		return self::TYPE_SCALAR;
-	}
-
-	function __sleep()
-	{
-		return ['o', 'n'];
 	}
 }
