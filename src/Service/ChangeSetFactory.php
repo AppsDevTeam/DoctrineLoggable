@@ -54,6 +54,13 @@ class ChangeSetFactory
 	 */
 	protected array $computedEntityChangeSets = [];
 
+	/**
+	 * Entity, jejichž změnový set se právě počítá výš v rekurzi. Brání zacyklení, viz getChangeSet().
+	 *
+	 * @var array<string, true>
+	 */
+	private array $changeSetsInProgress = [];
+
 	protected array $identifications = [];
 
 	private User $userIdProvider;
@@ -244,6 +251,31 @@ class ChangeSetFactory
 			}
 		}
 
+		// Vazby mezi entitami tvoří cykly (např. Product -> Category -> Product). Cache výš vrátí
+		// rozpracovaný ChangeSet, ale procházení vlastností pod ní běželo pokaždé znovu, takže se
+		// rekurze nikdy neuzavřela a zanořovala se, dokud nedošla paměť. A protože došla úplně,
+		// neměl si kde alokovat ani logger - proces zhasl bez jediného záznamu v logu.
+		// Do entity, která je v rekurzi rozpracovaná, se proto podruhé nezanořujeme; její změnový
+		// set doplní ten výše položený průchod, který ji rozpracoval.
+		if (isset($this->changeSetsInProgress[$sploh])) {
+			return $changeSet;
+		}
+		$this->changeSetsInProgress[$sploh] = true;
+
+		try {
+			$this->collectPropertyChanges($entity, $changeSet, $relatedEntity);
+		} finally {
+			unset($this->changeSetsInProgress[$sploh]);
+		}
+
+		return $changeSet;
+	}
+
+	/**
+	 * @throws ReflectionException
+	 */
+	private function collectPropertyChanges(object $entity, ChangeSet $changeSet, ?object $relatedEntity): void
+	{
 		$uowEntiyChangeSet = $this->uow->getEntityChangeSet($entity);
 		foreach ($this->getLoggedProperties(get_class($entity)) as $property) {
 			// property is scalar
@@ -282,7 +314,6 @@ class ChangeSetFactory
 			}
 
 		}
-		return $changeSet;
 	}
 
 	/**
@@ -323,16 +354,41 @@ class ChangeSetFactory
 			$nodeCollection->addAdded($this->createIdentification($_relatedEntity));
 		}
 
-		if ($relatedEntity) {
-			foreach ($collection as $_relatedEntity) {
-				if ($relatedEntity === $_relatedEntity) {
-					$nodeCollection->addChangeSet($this->getChangeSet($relatedEntity));
-					break;
-				}
-			}
+		if ($relatedEntity && $this->isEntityInCollection($collection, $relatedEntity)) {
+			$nodeCollection->addChangeSet($this->getChangeSet($relatedEntity));
 		}
 
 		return $nodeCollection;
+	}
+
+	/**
+	 * Zjistí, zda kolekce obsahuje danou entitu, aniž by ji kvůli tomu musela celou načíst.
+	 *
+	 * Dřív se tu procházela celá kolekce foreachem jen proto, aby se v ní našla jediná položka.
+	 * Doctrine kvůli tomu zhydratovala i vazby s desetitisíci řádky (typicky historie skladových
+	 * pohybů jednoho produktu) a spotřeba paměti vyšplhala přes memory_limit. Protože paměť došla
+	 * úplně, neměl si už kde alokovat ani logger - proces zhasl bez jediného záznamu, takže se
+	 * taková chyba nedala vůbec vystopovat.
+	 *
+	 * Na inverzní straně vazby (mappedBy) drží odkaz protější entita, takže příslušnost ke kolekci
+	 * se pozná porovnáním toho odkazu - bez jediného dotazu do databáze. U už načtené kolekce
+	 * i na vlastnící straně se chováme jako dřív; tam se nic nenačítá navíc.
+	 */
+	private function isEntityInCollection(Collection $collection, object $relatedEntity): bool
+	{
+		if (!$collection instanceof PersistentCollection || $collection->isInitialized()) {
+			return $collection->contains($relatedEntity);
+		}
+
+		$mappedBy = $collection->getMapping()->mappedBy ?? null;
+		if ($mappedBy === null) {
+			return $collection->contains($relatedEntity);
+		}
+
+		$owner = $this->em->getClassMetadata(ClassUtils::getClass($relatedEntity))
+			->getFieldValue($relatedEntity, $mappedBy);
+
+		return $owner === $collection->getOwner();
 	}
 
 	/**
