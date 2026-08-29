@@ -380,7 +380,17 @@ class ChangeSetFactory
 			return $collection->contains($relatedEntity);
 		}
 
-		$mappedBy = $collection->getMapping()->mappedBy ?? null;
+		$mapping = $collection->getMapping();
+
+		// Změněná entita nemusí mít s touto kolekcí nic společného - logovaná entita jich má
+		// obvykle víc a všem se sem předává tatáž $relatedEntity. Entita jiného typu v kolekci
+		// být nemůže, takže končíme dřív, než bychom na ní hledali neexistující mappedBy pole.
+		$targetEntity = $mapping->targetEntity ?? null;
+		if ($targetEntity !== null && !$relatedEntity instanceof $targetEntity) {
+			return false;
+		}
+
+		$mappedBy = $mapping->mappedBy ?? null;
 		if ($mappedBy === null) {
 			return $collection->contains($relatedEntity);
 		}
