@@ -215,6 +215,26 @@ class ChangeSetFactory
 		$this->updateLogEntry($entity, $changeSet);
 	}
 
+	/**
+	 * Zahodi cache klicovane pres spl_object_hash.
+	 *
+	 * Po clear() jsou vsechny entity odpojene a uvolnene, jenze PHP hash uvolneneho objektu
+	 * znovu pouzije pro nekterou z tech, ktere vzniknou po nem. Nova entita by pak dostala
+	 * cizi identifikaci, cizi change set a hlavne cizi, uz odpojeny ChangeLog - a flush by
+	 * spadl na "entity is not managed". V dlouho bezicim procesu, ktery flushuje a clearuje
+	 * v cyklu, je to jinak jen otazka casu.
+	 *
+	 * Cache trid a struktury asociaci se nechavaji, ty jsou klicovane nazvem tridy.
+	 */
+	public function onClear(): void
+	{
+		$this->logEntries = [];
+		$this->identifications = [];
+		$this->computedEntityChangeSets = [];
+		$this->changeSetsInProgress = [];
+		$this->scheduledEntities = [];
+	}
+
 	public function updateIdentification($entity): void
 	{
 		$oid = spl_object_hash($entity);

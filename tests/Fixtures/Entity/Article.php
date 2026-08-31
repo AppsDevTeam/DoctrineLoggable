@@ -133,6 +133,12 @@ class Article
 		$this->tags->removeElement($tag);
 	}
 
+	/** Assigns a brand new collection instead of mutating the managed one. */
+	public function replaceTags(Tag ...$tags): void
+	{
+		$this->tags = new ArrayCollection($tags);
+	}
+
 	public function getCover(): ?Cover
 	{
 		return $this->cover;

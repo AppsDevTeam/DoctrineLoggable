@@ -10,11 +10,14 @@ use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Author;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Comment;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Cover;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Event;
+use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Logo;
+use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Series;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Tag;
 use ADT\DoctrineLoggable\Tests\Fixtures\EntityManagerFactory;
 use ADT\DoctrineLoggable\Tests\Fixtures\FakeUser;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 
 final class ChangeSetFactoryTest extends TestCase
 {
@@ -225,6 +228,65 @@ final class ChangeSetFactoryTest extends TestCase
 		$this->factory->getLoggableEntityAssociationStructure();
 
 		self::assertSame($article, $this->factory->getLoggableEntityFromAssociationStructure($comment));
+	}
+
+	/**
+	 * Series::$logo is a unidirectional OneToOne, so there is no property on the logo leading
+	 * back. The structure keeps the owner and its property instead of a path.
+	 */
+	public function testAssociationStructureFallsBackToTheOwnerWhenThereIsNoWayBack(): void
+	{
+		$structure = $this->factory->getLoggableEntityAssociationStructure();
+
+		self::assertArrayHasKey(Logo::class, $structure);
+		self::assertContains(Series::class . '::logo', $structure[Logo::class]);
+	}
+
+	/**
+	 * The only place in the whole calculation that runs a query of its own, so a failure here
+	 * takes the flush down with it.
+	 */
+	public function testTheLoggedParentIsLookedUpWhenThereIsNoWayBack(): void
+	{
+		$series = new Series('Pivní speciály');
+		$series->setLogo($logo = new Logo('pivo.svg'));
+		$this->em->persist($logo);
+		$this->em->persist($series);
+		$this->em->flush();
+
+		$this->factory->getLoggableEntityAssociationStructure();
+
+		self::assertSame($series, $this->factory->getLoggableEntityFromAssociationStructure($logo));
+	}
+
+	/**
+	 * Everything keyed by spl_object_hash has to go once the entities are detached, the hash of
+	 * a freed object is handed out again. What is keyed by class name may stay.
+	 */
+	public function testOnClearDropsTheCachesKeyedByObjectAndKeepsTheOnesKeyedByClass(): void
+	{
+		$article = new Article('Pivo');
+		$this->em->persist($article);
+		$this->em->flush();
+
+		$this->factory->createIdentification($article);
+		$structure = $this->factory->getLoggableEntityAssociationStructure();
+
+		$this->factory->onClear();
+
+		foreach (['logEntries', 'identifications', 'computedEntityChangeSets'] as $name) {
+			self::assertSame([], $this->readProperty($name), $name . ' must be empty after onClear()');
+		}
+
+		self::assertSame($structure, $this->factory->getLoggableEntityAssociationStructure());
+		self::assertTrue($this->factory->isEntityLogged(Article::class));
+	}
+
+	private function readProperty(string $name): mixed
+	{
+		$property = new ReflectionProperty(ChangeSetFactory::class, $name);
+
+		return $property->getValue($this->factory);
 	}
 
 	public function testAChildWithoutAParentResolvesToNull(): void

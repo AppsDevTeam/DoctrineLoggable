@@ -15,8 +15,11 @@ use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Attachment;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\ArticleStateEnum;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Author;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Comment;
+use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Chapter;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Cover;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Issue;
+use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Logo;
+use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Poll;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Series;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Tag;
 use ADT\DoctrineLoggable\Tests\Fixtures\EntityManagerFactory;
@@ -27,6 +30,7 @@ use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\PersistentCollection;
 use Nette\Security\SimpleIdentity;
+use TypeError;
 use PHPUnit\Framework\TestCase;
 
 final class LoggableListenerTest extends TestCase
@@ -573,6 +577,214 @@ final class LoggableListenerTest extends TestCase
 		self::assertCount(1, $logs);
 		self::assertSame(Article::class, $logs[0]->getObjectClass());
 		self::assertSame('Pivo 12°', $logs[0]->getChangeSet()->getChangedProperties()['title']->getNew());
+	}
+
+	/**
+	 * Series::$logo is unidirectional, so the structure cannot store a path back and falls back
+	 * to a findOneBy() on the owner. That is the only place in the whole calculation that runs
+	 * a query of its own, and a failure there takes the flush down with it.
+	 */
+	public function testAChangeBehindAUnidirectionalToOneIsLoggedOnTheOwner(): void
+	{
+		$series = new Series('Pivní speciály');
+		$series->setLogo($logo = new Logo('pivo.svg'));
+		$this->em->persist($logo);
+		$this->em->persist($series);
+		$this->em->flush();
+
+		$logo->setFileName('pivo-12.svg');
+		$this->em->flush();
+
+		$logs = EntityManagerFactory::findChangeLogs($this->em);
+
+		self::assertCount(1, $logs);
+		self::assertSame(Series::class, $logs[0]->getObjectClass());
+
+		$nested = $logs[0]->getChangeSet()->getChangedProperties()['logo']->getChangeSet();
+		self::assertSame('pivo-12.svg', $nested->getChangedProperties()['fileName']->getNew());
+	}
+
+	/**
+	 * The one combination that ends up in the log: the child leaves the collection and is deleted,
+	 * while its reference back to the parent still stands.
+	 */
+	public function testRemovingAndDeletingAChildIsLoggedOnTheParent(): void
+	{
+		$article = new Article('Pivo');
+		$article->addComment($comment = new Comment('Dobré'));
+		$this->em->persist($comment);
+		$this->em->persist($article);
+		$this->em->flush();
+
+		$article->getComments()->removeElement($comment);
+		$this->em->remove($comment);
+		$this->em->flush();
+
+		$this->em->clear();
+		$comments = $this->reloadFirstChangeLog()->getChangeSet()->getChangedProperties()['comments'];
+
+		self::assertSame(['Dobré'], array_map(
+			fn ($id) => $id->getIdentification()['text'],
+			array_values($comments->getRemoved())
+		));
+		self::assertSame([], $comments->getAdded());
+	}
+
+	/**
+	 * Documents a gap: a child taken out of the collection but kept in the database is scheduled
+	 * for nothing, and a collection change alone never schedules its owner either. The listener
+	 * is therefore never handed anything and the removal is lost.
+	 */
+	public function testRemovingAChildWithoutDeletingItIsNotLogged(): void
+	{
+		$article = new Article('Pivo');
+		$article->addComment($comment = new Comment('Dobré'));
+		$this->em->persist($comment);
+		$this->em->persist($article);
+		$this->em->flush();
+
+		$article->getComments()->removeElement($comment);
+		$this->em->flush();
+
+		self::assertSame([], EntityManagerFactory::findChangeLogs($this->em));
+	}
+
+	/**
+	 * Documents a trap: the parent is only ever found through the reference the child holds back
+	 * to it. Article::removeComment() nulls that reference, which is what such a method normally
+	 * does, and the removal disappears from the log even though the child is deleted as well.
+	 */
+	public function testNullingTheBackReferenceHidesTheRemovalFromTheLog(): void
+	{
+		$article = new Article('Pivo');
+		$article->addComment($comment = new Comment('Dobré'));
+		$this->em->persist($comment);
+		$this->em->persist($article);
+		$this->em->flush();
+
+		$article->removeComment($comment);
+		$this->em->remove($comment);
+		$this->em->flush();
+
+		self::assertSame([], EntityManagerFactory::findChangeLogs($this->em));
+	}
+
+	/**
+	 * Documents a gap, not a wanted behaviour: assigning a brand new collection makes Doctrine
+	 * drop the old one wholesale, so the log only ever sees what the new one holds.
+	 */
+	public function testReplacingAWholeCollectionLosesWhatWasRemoved(): void
+	{
+		$akce = new Tag('akce');
+		$novinka = new Tag('novinka');
+		$article = new Article('Pivo');
+		$article->addTag($novinka);
+		$this->em->persist($akce);
+		$this->em->persist($novinka);
+		$this->em->persist($article);
+		$this->em->flush();
+
+		$article->replaceTags($akce);
+		$this->em->flush();
+
+		$this->em->clear();
+		$tags = $this->reloadFirstChangeLog()->getChangeSet()->getChangedProperties()['tags'];
+
+		self::assertSame(['akce'], array_map(fn ($id) => $id->getIdentification()['name'], array_values($tags->getAdded())));
+		self::assertSame([], $tags->getRemoved());
+	}
+
+	/**
+	 * Chapter is logged itself and at the same time a child of the logged Series::$chapters.
+	 * The listener takes the first branch only, so the change lands on the chapter and the
+	 * series does not learn about it.
+	 */
+	public function testAChildThatIsLoggedItselfGetsItsOwnRowAndNotTheParents(): void
+	{
+		$series = new Series('Pivní speciály');
+		$series->addChapter($chapter = new Chapter('Ležáky'));
+		$this->em->persist($chapter);
+		$this->em->persist($series);
+		$this->em->flush();
+
+		$chapter->setTitle('Ležáky 12°');
+		$this->em->flush();
+
+		$logs = EntityManagerFactory::findChangeLogs($this->em);
+
+		self::assertCount(1, $logs);
+		self::assertSame(Chapter::class, $logs[0]->getObjectClass());
+		self::assertSame('Ležáky 12°', $logs[0]->getChangeSet()->getChangedProperties()['title']->getNew());
+	}
+
+	/**
+	 * Documents a limitation: ChangeSetFactory::getIdentifier() is a plain getId() typed ?int, so
+	 * a logged entity keyed by a uuid takes the whole flush down. It happens on the very first
+	 * insert, because the identifier is read before the insert is dismissed as not worth logging.
+	 */
+	public function testALoggedEntityKeyedByAStringIsNotSupported(): void
+	{
+		$this->em->persist(new Poll('a1b2', 'Jaké pivo?'));
+
+		$this->expectException(TypeError::class);
+		$this->em->flush();
+	}
+
+	/**
+	 * Deleting the owner of an inverse OneToOne. ChangeSetFactory reads $scheduledEntities here
+	 * to report the owner that went away, but nothing ever writes into that array, so the branch
+	 * is dead and the deletion leaves no trace on the article.
+	 */
+	public function testDeletingTheOwnerOfAnInverseOneToOneLeavesNoTraceOnTheOtherSide(): void
+	{
+		$article = new Article('Pivo');
+		$cover = new Cover('pivo.jpg');
+		$article->setCover($cover);
+		$this->em->persist($cover);
+		$this->em->persist($article);
+		$this->em->flush();
+
+		$this->em->remove($cover);
+		$this->em->flush();
+
+		self::assertSame([], EntityManagerFactory::findChangeLogs($this->em));
+	}
+
+	/**
+	 * Regrese: the caches are keyed by spl_object_hash, and PHP hands the hash of a freed object
+	 * out again. After clear() the next entity therefore used to get the identification, the
+	 * change set and the already detached ChangeLog of the one before it, and the flush died on
+	 * "entity is not managed". A long running process that flushes and clears in a loop hit it
+	 * sooner or later.
+	 */
+	public function testAChangeAfterTheEntityManagerWasClearedIsNotConfusedWithTheOldOne(): void
+	{
+		$article = new Article('Pivo');
+		$this->em->persist($article);
+		$this->em->flush();
+
+		$article->setTitle('Pivo 12°');
+		$this->em->flush();
+
+		// the entity has to be gone for its object hash to be handed out to the next one
+		$this->em->clear();
+		unset($article);
+		gc_collect_cycles();
+
+		$other = new Article('Víno');
+		$this->em->persist($other);
+		$this->em->flush();
+
+		$other->setTitle('Víno bílé');
+		$this->em->flush();
+
+		$this->em->clear();
+		$logs = EntityManagerFactory::findChangeLogs($this->em);
+
+		self::assertCount(2, $logs);
+		self::assertSame('Pivo 12°', $logs[0]->getChangeSet()->getIdentification()->getIdentification()['title']);
+		self::assertSame('Víno bílé', $logs[1]->getChangeSet()->getIdentification()->getIdentification()['title']);
+		self::assertNotSame($logs[0]->getObjectId(), $logs[1]->getObjectId());
 	}
 
 	private function fetchRawChangeSet(int $id): string

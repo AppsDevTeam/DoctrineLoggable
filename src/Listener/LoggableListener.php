@@ -5,6 +5,7 @@ namespace ADT\DoctrineLoggable\Listener;
 use ADT\DoctrineLoggable\Service\ChangeSetFactory;
 use Doctrine\Common\EventSubscriber;
 use Doctrine\Common\Util\ClassUtils;
+use Doctrine\ORM\Event\OnClearEventArgs;
 use Doctrine\ORM\Event\OnFlushEventArgs;
 use Doctrine\ORM\Event\PostPersistEventArgs;
 use Doctrine\ORM\Exception\ORMException;
@@ -25,6 +26,7 @@ class LoggableListener implements EventSubscriber
 		return [
 			'onFlush',
 			'postPersist',
+			'onClear',
 		];
 	}
 
@@ -67,5 +69,10 @@ class LoggableListener implements EventSubscriber
 	{
 		$object = $args->getObject();
 		$this->changeSetFactory->updateIdentification($object);
+	}
+
+	public function onClear(OnClearEventArgs $args): void
+	{
+		$this->changeSetFactory->onClear();
 	}
 }
