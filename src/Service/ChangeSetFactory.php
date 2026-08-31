@@ -286,7 +286,8 @@ class ChangeSetFactory
 	private function collectPropertyChanges(object $entity, ChangeSet $changeSet, ?object $relatedEntity): void
 	{
 		$uowEntiyChangeSet = $this->uow->getEntityChangeSet($entity);
-		foreach ($this->getLoggedProperties(get_class($entity)) as $property) {
+		// u proxy vraci get_class tridu proxy, ta ma vlastni properties s cizimi atributy
+		foreach ($this->getLoggedProperties(ClassUtils::getClass($entity)) as $property) {
 			// property is scalar
 			$columnAnnotation = $this->reader->getPropertyAttribute($property, Column::class);
 			if ($columnAnnotation) {

@@ -11,10 +11,13 @@ use ADT\DoctrineLoggable\ChangeSet\ToOne;
 use ADT\DoctrineLoggable\Entity\ChangeLog;
 use ADT\DoctrineLoggable\Serializer\ChangeSetSerializer;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Article;
+use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Attachment;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\ArticleStateEnum;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Author;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Comment;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Cover;
+use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Issue;
+use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Series;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Tag;
 use ADT\DoctrineLoggable\Tests\Fixtures\EntityManagerFactory;
 use ADT\DoctrineLoggable\Tests\Fixtures\FakeUser;
@@ -22,6 +25,7 @@ use ADT\DoctrineLoggable\Tests\Fixtures\Money;
 use ADT\DoctrineLoggable\Tests\Fixtures\MoneyHandler;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\PersistentCollection;
 use Nette\Security\SimpleIdentity;
 use PHPUnit\Framework\TestCase;
 
@@ -380,6 +384,195 @@ final class LoggableListenerTest extends TestCase
 
 		self::assertJson($json);
 		self::assertSame(ChangeSetSerializer::VERSION, json_decode($json, true)['version']);
+	}
+
+	/**
+	 * Regrese: Series::$latestIssue and Issue::$series point at each other, the cache returned
+	 * the change set that was still being built and the walk below it ran again every time.
+	 * The recursion never closed and ate all the memory, without a single line in the log.
+	 */
+	public function testACycleBetweenTwoLoggedPropertiesDoesNotRecurseForever(): void
+	{
+		$series = new Series('Pivní speciály');
+		$series->setLatestIssue($issue = new Issue('Ležák'));
+		$this->em->persist($issue);
+		$this->em->persist($series);
+		$this->em->flush();
+
+		$series->setName('Pivní speciály 2026');
+		$issue->setTitle('Ležák 12°');
+		$this->em->flush();
+
+		$logs = EntityManagerFactory::findChangeLogs($this->em);
+
+		self::assertCount(1, $logs);
+		self::assertSame(Series::class, $logs[0]->getObjectClass());
+
+		$properties = $logs[0]->getChangeSet()->getChangedProperties();
+		self::assertSame('Pivní speciály 2026', $properties['name']->getNew());
+
+		$nested = $properties['latestIssue']->getChangeSet();
+		self::assertSame('Ležák 12°', $nested->getChangedProperties()['title']->getNew());
+	}
+
+	/**
+	 * The cycle survives the round trip through the database as a reference, the same change set
+	 * instance is on both ends of it.
+	 */
+	public function testACyclicChangeSetIsStoredAndReadBackAsAReference(): void
+	{
+		$series = new Series('Pivní speciály');
+		$series->setLatestIssue($issue = new Issue('Ležák'));
+		$this->em->persist($issue);
+		$this->em->persist($series);
+		$this->em->flush();
+
+		$series->setName('Pivní speciály 2026');
+		$this->em->flush();
+
+		$this->em->clear();
+		$changeSet = $this->reloadFirstChangeLog()->getChangeSet();
+
+		$issueChangeSet = $changeSet->getChangedProperties()['latestIssue']->getChangeSet();
+		self::assertSame($changeSet, $issueChangeSet->getChangedProperties()['series']->getChangeSet());
+	}
+
+	/**
+	 * Regrese: the changed child used to be looked up by walking the whole collection, so Doctrine
+	 * hydrated every row of it just to find one entity and ran out of memory on big ones.
+	 */
+	public function testTheChangedChildIsFoundWithoutLoadingTheWholeCollection(): void
+	{
+		$article = new Article('Pivo');
+		foreach (['Dobré', 'Výborné', 'Ujde'] as $text) {
+			$article->addComment($comment = new Comment($text));
+			$this->em->persist($comment);
+		}
+		$this->em->persist($article);
+		$this->em->flush();
+		$commentId = $article->getComments()->first()->getId();
+
+		$this->em->clear();
+		$comment = $this->em->find(Comment::class, $commentId);
+		$comment->setText('Naprosto skvělé');
+		$this->em->flush();
+
+		$comments = $comment->getArticle()->getComments();
+		self::assertInstanceOf(PersistentCollection::class, $comments);
+		self::assertFalse($comments->isInitialized());
+
+		$logs = EntityManagerFactory::findChangeLogs($this->em);
+		self::assertCount(1, $logs);
+
+		$nested = array_values($logs[0]->getChangeSet()->getChangedProperties()['comments']->getChangeSets())[0];
+		self::assertSame('Naprosto skvělé', $nested->getChangedProperties()['text']->getNew());
+	}
+
+	public function testAnAlreadyLoadedCollectionStillFindsTheChangedChild(): void
+	{
+		$article = new Article('Pivo');
+		$article->addComment($comment = new Comment('Dobré'));
+		$this->em->persist($comment);
+		$this->em->persist($article);
+		$this->em->flush();
+		$commentId = $comment->getId();
+
+		$this->em->clear();
+		$comment = $this->em->find(Comment::class, $commentId);
+		$comments = $comment->getArticle()->getComments();
+		$comments->toArray();
+		self::assertTrue($comments->isInitialized());
+
+		$comment->setText('Výborné');
+		$this->em->flush();
+
+		$logs = EntityManagerFactory::findChangeLogs($this->em);
+		self::assertCount(1, $logs);
+
+		$nested = array_values($logs[0]->getChangeSet()->getChangedProperties()['comments']->getChangeSets())[0];
+		self::assertSame('Výborné', $nested->getChangedProperties()['text']->getNew());
+	}
+
+	/**
+	 * Regrese: the same changed entity is offered to every collection of the logged entity, so
+	 * a comment reached Article::$attachments too and the mappedBy field was read on it. That
+	 * property does not exist on a comment and the whole flush died on
+	 * "Call to a member function getValue() on null".
+	 */
+	public function testACollectionOfAnotherTypeIgnoresTheChangedChild(): void
+	{
+		$article = new Article('Pivo');
+		$article->addComment($comment = new Comment('Dobré'));
+		$article->addAttachment($attachment = new Attachment('pivo.pdf'));
+		$this->em->persist($comment);
+		$this->em->persist($attachment);
+		$this->em->persist($article);
+		$this->em->flush();
+		$commentId = $comment->getId();
+
+		$this->em->clear();
+		$comment = $this->em->find(Comment::class, $commentId);
+		$comment->setText('Výborné');
+		$this->em->flush();
+
+		$attachments = $comment->getArticle()->getAttachments();
+		self::assertInstanceOf(PersistentCollection::class, $attachments);
+		self::assertFalse($attachments->isInitialized());
+
+		$properties = EntityManagerFactory::findChangeLogs($this->em)[0]->getChangeSet()->getChangedProperties();
+		self::assertArrayNotHasKey('attachments', $properties);
+		self::assertArrayHasKey('comments', $properties);
+	}
+
+	/**
+	 * A change of a child of the second collection has to be logged the very same way.
+	 */
+	public function testAChangeOfAChildOfTheSecondCollectionIsLoggedOnTheParent(): void
+	{
+		$article = new Article('Pivo');
+		$article->addComment($comment = new Comment('Dobré'));
+		$article->addAttachment($attachment = new Attachment('pivo.pdf'));
+		$this->em->persist($comment);
+		$this->em->persist($attachment);
+		$this->em->persist($article);
+		$this->em->flush();
+		$attachmentId = $attachment->getId();
+
+		$this->em->clear();
+		$attachment = $this->em->find(Attachment::class, $attachmentId);
+		$attachment->setFileName('pivo-12.pdf');
+		$this->em->flush();
+
+		$properties = EntityManagerFactory::findChangeLogs($this->em)[0]->getChangeSet()->getChangedProperties();
+
+		self::assertArrayNotHasKey('comments', $properties);
+
+		$nested = array_values($properties['attachments']->getChangeSets())[0];
+		self::assertSame('pivo-12.pdf', $nested->getChangedProperties()['fileName']->getNew());
+	}
+
+	/**
+	 * Regrese: an entity loaded through a relation is a proxy and get_class() returns the proxy
+	 * class. Its own properties carry attributes of classes the project need not have installed,
+	 * and the log row would remember the proxy class instead of the entity.
+	 */
+	public function testAProxiedEntityIsLoggedUnderItsRealClass(): void
+	{
+		$article = new Article('Pivo');
+		$this->em->persist($article);
+		$this->em->flush();
+		$articleId = $article->getId();
+
+		$this->em->clear();
+		$article = $this->em->getReference(Article::class, $articleId);
+		$article->setTitle('Pivo 12°');
+		$this->em->flush();
+
+		$logs = EntityManagerFactory::findChangeLogs($this->em);
+
+		self::assertCount(1, $logs);
+		self::assertSame(Article::class, $logs[0]->getObjectClass());
+		self::assertSame('Pivo 12°', $logs[0]->getChangeSet()->getChangedProperties()['title']->getNew());
 	}
 
 	private function fetchRawChangeSet(int $id): string

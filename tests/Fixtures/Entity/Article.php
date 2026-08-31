@@ -59,11 +59,17 @@ class Article
 	#[ADA\LoggableProperty]
 	private Collection $comments;
 
+	/** @var Collection<int, Attachment> */
+	#[ORM\OneToMany(targetEntity: Attachment::class, mappedBy: 'owner')]
+	#[ADA\LoggableProperty]
+	private Collection $attachments;
+
 	public function __construct(string $title)
 	{
 		$this->title = $title;
 		$this->tags = new ArrayCollection();
 		$this->comments = new ArrayCollection();
+		$this->attachments = new ArrayCollection();
 	}
 
 	public function getId(): ?int
@@ -157,5 +163,17 @@ class Article
 	{
 		$this->comments->removeElement($comment);
 		$comment->setArticle(null);
+	}
+
+	/** @return Collection<int, Attachment> */
+	public function getAttachments(): Collection
+	{
+		return $this->attachments;
+	}
+
+	public function addAttachment(Attachment $attachment): void
+	{
+		$this->attachments->add($attachment);
+		$attachment->setOwner($this);
 	}
 }
