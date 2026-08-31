@@ -1,6 +1,6 @@
 <?php
 
-namespace Adt\DoctrineLoggable\ChangeSet;
+namespace ADT\DoctrineLoggable\ChangeSet;
 
 class ChangeSet
 {
@@ -79,11 +79,17 @@ class ChangeSet
 		return $this;
 	}
 
-	function __wakeup()
+	/**
+	 * Adds a property change without the isChanged() filter used by addPropertyChange().
+	 *
+	 * While a cyclic graph is being decoded, a nested change set is still empty at the moment
+	 * its parent property is restored, so the filter would throw the property away.
+	 *
+	 * @internal used by the serializer
+	 */
+	public function restoreProperty(PropertyChangeSet $property): void
 	{
-		foreach ($this->p as $name => $propertyChangeSet) {
-			$propertyChangeSet->setName($name);
-		}
+		$this->p[$property->getName()] = $property;
 	}
 
 	/**

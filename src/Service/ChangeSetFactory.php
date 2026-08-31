@@ -2,10 +2,10 @@
 
 namespace ADT\DoctrineLoggable\Service;
 
-use Adt\DoctrineLoggable\ChangeSet AS CS;
+use ADT\DoctrineLoggable\ChangeSet AS CS;
 use ADT\DoctrineLoggable\Attributes AS DLA;
 use ADT\DoctrineLoggable\ChangeSet\ChangeSet;
-use Adt\DoctrineLoggable\ChangeSet\ToMany;
+use ADT\DoctrineLoggable\ChangeSet\ToMany;
 use ADT\DoctrineLoggable\Entity\ChangeLog;
 use DateTimeInterface;
 use Doctrine\Common\Collections\Collection;
@@ -117,16 +117,25 @@ class ChangeSetFactory
 				}
 
 				$associationMapping = $classMetadata->getAssociationMapping($property->getName());
-				$associationPropertyName = '';
+				$associationPropertyNames = [];
 				if ($associationMapping['type'] === ClassMetadata::ONE_TO_ONE) {
-					$associationPropertyName = 'inversedBy';
+					// na vlastnicke strane drzi zpetnou vazbu inversedBy, na inverzni mappedBy
+					$associationPropertyNames = ['mappedBy', 'inversedBy'];
 				}
 				elseif ($associationMapping['type'] === ClassMetadata::ONE_TO_MANY){
-					$associationPropertyName = 'mappedBy';
+					$associationPropertyNames = ['mappedBy'];
 				}
-				if ($associationPropertyName) {
-					if (!empty($associationMapping[$associationPropertyName])) {
-						$structure[$associationMapping['targetEntity']][] = array_merge([$associationMapping[$associationPropertyName]], $path);
+				if ($associationPropertyNames) {
+					$backReference = null;
+					foreach ($associationPropertyNames as $associationPropertyName) {
+						if (!empty($associationMapping[$associationPropertyName])) {
+							$backReference = $associationMapping[$associationPropertyName];
+							break;
+						}
+					}
+
+					if ($backReference !== null) {
+						$structure[$associationMapping['targetEntity']][] = array_merge([$backReference], $path);
 					} else {
 						$structure[$associationMapping['targetEntity']][] = $classMetadata->getName(). '::' . $property->getName();
 					}
@@ -206,6 +215,26 @@ class ChangeSetFactory
 		$this->updateLogEntry($entity, $changeSet);
 	}
 
+	/**
+	 * Zahodi cache klicovane pres spl_object_hash.
+	 *
+	 * Po clear() jsou vsechny entity odpojene a uvolnene, jenze PHP hash uvolneneho objektu
+	 * znovu pouzije pro nekterou z tech, ktere vzniknou po nem. Nova entita by pak dostala
+	 * cizi identifikaci, cizi change set a hlavne cizi, uz odpojeny ChangeLog - a flush by
+	 * spadl na "entity is not managed". V dlouho bezicim procesu, ktery flushuje a clearuje
+	 * v cyklu, je to jinak jen otazka casu.
+	 *
+	 * Cache trid a struktury asociaci se nechavaji, ty jsou klicovane nazvem tridy.
+	 */
+	public function onClear(): void
+	{
+		$this->logEntries = [];
+		$this->identifications = [];
+		$this->computedEntityChangeSets = [];
+		$this->changeSetsInProgress = [];
+		$this->scheduledEntities = [];
+	}
+
 	public function updateIdentification($entity): void
 	{
 		$oid = spl_object_hash($entity);
@@ -277,7 +306,8 @@ class ChangeSetFactory
 	private function collectPropertyChanges(object $entity, ChangeSet $changeSet, ?object $relatedEntity): void
 	{
 		$uowEntiyChangeSet = $this->uow->getEntityChangeSet($entity);
-		foreach ($this->getLoggedProperties(get_class($entity)) as $property) {
+		// u proxy vraci get_class tridu proxy, ta ma vlastni properties s cizimi atributy
+		foreach ($this->getLoggedProperties(ClassUtils::getClass($entity)) as $property) {
 			// property is scalar
 			$columnAnnotation = $this->reader->getPropertyAttribute($property, Column::class);
 			if ($columnAnnotation) {
@@ -431,8 +461,11 @@ class ChangeSetFactory
 			}
 
 			// inversed side - its OneToOne with mappedBy annotation
-			// TODO poradne otestovat, nebo este lepsi udelat testy
 		} else {
+			// zmeny v navazane entite se logujou stejne jako u vlastnicke strany a u toMany,
+			// bez toho by property s LoggableProperty na inverzni strane nelogovala vubec nic
+			$changeSet = $this->getChangeSet($relatedEntity);
+
 			$ownerProperty = $oneToOneAnnotation->mappedBy;
 			$ownerClass = $this->em->getClassMetadata(ClassUtils::getClass($entity))
 				->getAssociationTargetClass($property->name);
@@ -490,6 +523,11 @@ class ChangeSetFactory
 					$newValues = [];
 					foreach ($fieldNameParts as $fieldNamePart) {
 						foreach ($values as $value) {
+							// a nullable relation anywhere along the path ends it, there is nothing to read
+							if (!is_object($value)) {
+								continue;
+							}
+
 							if ($value instanceof Proxy) {
 								if (!$value->__isInitialized()) {
 									$value->__load();
@@ -539,7 +577,7 @@ class ChangeSetFactory
 
 	/**
 	 * @param $entityClassName
-	 * @return ReflectionProperty[]
+	 * @return ReflectionProperty[] keyed by property name
 	 * @throws ReflectionException
 	 */
 	protected function getLoggedProperties($entityClassName): array
@@ -550,7 +588,7 @@ class ChangeSetFactory
 			foreach ($reflection->getProperties() as $property) {
 				$an = $this->reader->getPropertyAttribute($property, DLA\LoggableProperty::class);
 				if ($an !== NULL) {
-					$list[] = $property;
+					$list[$property->getName()] = $property;
 				}
 			}
 			$this->loggableEntityProperties[$entityClassName] = $list;
@@ -598,6 +636,9 @@ class ChangeSetFactory
 			$this->logEntries[spl_object_hash($entity)] = $logEntry;
 
 		} else {
+			// the change set is mutated in place, so it stays the very same instance and Doctrine,
+			// which compares object valued fields by identity, would not see any change
+			$this->em->getUnitOfWork()->setOriginalEntityProperty(spl_object_id($logEntry), 'changeSet', null);
 			$this->em->getUnitOfWork()->recomputeSingleEntityChangeSet($this->em->getClassMetadata(get_class($logEntry)), $logEntry);
 		}
 	}

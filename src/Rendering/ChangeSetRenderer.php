@@ -18,7 +18,7 @@ class ChangeSetRenderer
 	public function render(ChangeSet $changeSet)
 	{
 		$this->renderChangeSet($changeSet);
-		$this->changesetRendered = [];
+		$this->changeSetsRendered = [];
 	}
 
 	protected function renderChangeSet(ChangeSet $changeSet)

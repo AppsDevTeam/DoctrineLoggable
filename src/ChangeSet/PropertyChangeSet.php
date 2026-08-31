@@ -1,13 +1,13 @@
 <?php
 
-namespace Adt\DoctrineLoggable\ChangeSet;
+namespace ADT\DoctrineLoggable\ChangeSet;
 
 abstract class PropertyChangeSet
 {
 
 	const TYPE_SCALAR = 'scalar';
 	const TYPE_TO_ONE = 'toOne';
-	const TYPE_TO_MANNY = 'toManny';
+	const TYPE_TO_MANY = 'toMany';
 
 	/** @var string */
 	protected $name;
@@ -45,11 +45,6 @@ abstract class PropertyChangeSet
 	 * @return string
 	 */
 	abstract public function getType();
-
-	/**
-	 * @return array
-	 */
-	abstract public function __sleep();
 
 	abstract public function merge(PropertyChangeSet $property);
 
