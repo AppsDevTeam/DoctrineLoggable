@@ -26,8 +26,7 @@
 	},
 	"autoload": {
 		"psr-4": {
-			"ADT\\DoctrineLoggable\\": "src/",
-			"Adt\\DoctrineLoggable\\": "src/"
+			"ADT\\DoctrineLoggable\\": "src/"
 		},
 		"classmap": [
 			"src/exceptions.php"
