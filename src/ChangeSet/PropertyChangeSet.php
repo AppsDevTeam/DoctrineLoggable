@@ -8,6 +8,7 @@ abstract class PropertyChangeSet
 	const TYPE_SCALAR = 'scalar';
 	const TYPE_TO_ONE = 'toOne';
 	const TYPE_TO_MANY = 'toMany';
+	const TYPE_REDACTED = 'redacted';
 
 	/** @var string */
 	protected $name;

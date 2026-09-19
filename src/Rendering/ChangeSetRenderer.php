@@ -4,6 +4,7 @@ namespace ADT\DoctrineLoggable\Rendering;
 
 use ADT\DoctrineLoggable\ChangeSet\ChangeSet;
 use ADT\DoctrineLoggable\ChangeSet\Id;
+use ADT\DoctrineLoggable\ChangeSet\Redacted;
 use ADT\DoctrineLoggable\ChangeSet\Scalar;
 use ADT\DoctrineLoggable\ChangeSet\ToMany;
 use ADT\DoctrineLoggable\ChangeSet\ToOne;
@@ -47,6 +48,8 @@ class ChangeSetRenderer
 					$this->renderToOne($propertyChangeSet);
 				} elseif ($propertyChangeSet instanceof ToMany) {
 					$this->renderToMany($propertyChangeSet);
+				} elseif ($propertyChangeSet instanceof Redacted) {
+					$this->renderRedacted($propertyChangeSet);
 				}
 				echo "</tr>";
 			}
@@ -86,6 +89,18 @@ class ChangeSetRenderer
 		} else {
 			echo "<span title=\"{$parts}\">{$class} ({$identification->getId()})</span>";
 		}
+	}
+
+	/**
+	 * Hodnoty nejsou a nikdy nebyly - sloupce zustanou prazdne, aby bylo poznat,
+	 * ze se nezmenilo "neco na nic", ale ze se hodnota nezaznamenava.
+	 */
+	protected function renderRedacted(Redacted $redacted)
+	{
+		echo "<td>{$redacted->getName()}</td>";
+		echo "<td></td>";
+		echo "<td></td>";
+		echo "<td>změněno</td>";
 	}
 
 	protected function renderScalar(Scalar $scalar)

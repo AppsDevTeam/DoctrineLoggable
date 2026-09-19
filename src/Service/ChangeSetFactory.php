@@ -365,6 +365,16 @@ class ChangeSetFactory
 		$uowEntiyChangeSet = $this->uow->getEntityChangeSet($entity);
 		// u proxy vraci get_class tridu proxy, ta ma vlastni properties s cizimi atributy
 		foreach ($this->getLoggedProperties(ClassUtils::getClass($entity)) as $property) {
+			// hodnota se nelogovat nema - zbyde jen informace, ze se vlastnost zmenila.
+			// Musi to byt pred vetvenim na typ: rozhoduje jen to, jestli Doctrine zmenu
+			// hlasi, a co je to za sloupec uz je jedno, protoze se stejne nezaznamena.
+			if (!$this->isPropertyValueLogged($property)) {
+				if (isset($uowEntiyChangeSet[$property->getName()])) {
+					$changeSet->addPropertyChange(new CS\Redacted($property->name));
+				}
+				continue;
+			}
+
 			// property is scalar
 			$columnAnnotation = $this->reader->getPropertyAttribute($property, Column::class);
 			if ($columnAnnotation) {
@@ -651,6 +661,17 @@ class ChangeSetFactory
 			$this->loggableEntityProperties[$entityClassName] = $list;
 		}
 		return $this->loggableEntityProperties[$entityClassName];
+	}
+
+	/**
+	 * Loguje se u teto vlastnosti i hodnota? Viz LoggableProperty::$withValue.
+	 */
+	private function isPropertyValueLogged(ReflectionProperty $property): bool
+	{
+		/** @var DLA\LoggableProperty|null $attribute */
+		$attribute = $this->reader->getPropertyAttribute($property, DLA\LoggableProperty::class);
+
+		return $attribute === null || $attribute->withValue;
 	}
 
 	/**

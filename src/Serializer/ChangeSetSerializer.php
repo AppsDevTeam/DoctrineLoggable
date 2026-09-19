@@ -7,6 +7,7 @@ namespace ADT\DoctrineLoggable\Serializer;
 use ADT\DoctrineLoggable\ChangeSet\ChangeSet;
 use ADT\DoctrineLoggable\ChangeSet\Id;
 use ADT\DoctrineLoggable\ChangeSet\PropertyChangeSet;
+use ADT\DoctrineLoggable\ChangeSet\Redacted;
 use ADT\DoctrineLoggable\ChangeSet\Scalar;
 use ADT\DoctrineLoggable\ChangeSet\ToMany;
 use ADT\DoctrineLoggable\ChangeSet\ToOne;
@@ -31,6 +32,7 @@ class ChangeSetSerializer
 	public const TYPE_SCALAR = 'scalar';
 	public const TYPE_TO_ONE = 'toOne';
 	public const TYPE_TO_MANY = 'toMany';
+	public const TYPE_REDACTED = 'redacted';
 
 	private const KEY_ID = '$id';
 	private const KEY_REF = '$ref';
@@ -149,6 +151,11 @@ class ChangeSetSerializer
 			];
 		}
 
+		// nese jen jmeno; hodnota se vedome nikam neuklada, takze ani neni co zapsat
+		if ($property instanceof Redacted) {
+			return ['type' => self::TYPE_REDACTED];
+		}
+
 		if ($property instanceof ToOne) {
 			return [
 				'type' => self::TYPE_TO_ONE,
@@ -236,6 +243,9 @@ class ChangeSetSerializer
 					$this->valueSerializer->decode($data['old'] ?? null),
 					$this->valueSerializer->decode($data['new'] ?? null)
 				);
+
+			case self::TYPE_REDACTED:
+				return new Redacted($name);
 
 			case self::TYPE_TO_ONE:
 				$toOne = new ToOne($name, $this->decodeId($data['old'] ?? null), $this->decodeId($data['new'] ?? null));

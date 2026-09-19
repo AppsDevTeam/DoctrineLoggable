@@ -53,6 +53,26 @@ class Role
 }
 ```
 
+## Logging a change without its value
+
+Some values do not belong in a log even as history - a password hash is the usual one. Dropping
+the `#[LoggableProperty]` attribute is not the answer: the change would then not be logged at all
+and the history would be missing the fact that the password ever changed. Keep the attribute and
+turn the value off:
+
+```php
+#[ORM\Column(nullable: true)]
+#[ADA\LoggableProperty(withValue: false)]
+protected ?string $password = null;
+```
+
+The change set then holds a `Redacted` node carrying nothing but the property name, so the log
+says *password changed* and no more. Nothing is written anywhere, so the old value cannot be
+recovered from the log even by someone holding a database dump.
+
+Works for columns and owning-side `toOne` associations, that is wherever Doctrine reports the
+change in the entity change set. On collections the flag is ignored.
+
 ## Stored format
 
 The `change_set` column is a JSON column handled by the `change_set` DBAL type, which the extension
@@ -96,7 +116,7 @@ Arrays never appear raw in a value position, so `@type` is always an unambiguous
 Built-in envelope types are `datetime`, `enum`, `array`, `binary`, `float` (for `NAN` and `INF`)
 and `object` as the last resort fallback.
 
-The property type is a `scalar`/`toOne`/`toMany` discriminator rather than a class name, so the
+The property type is a `scalar`/`toOne`/`toMany`/`redacted` discriminator rather than a class name, so the
 classes of this library can be moved or renamed without breaking existing logs.
 
 The change set graph may contain cycles. A change set referenced more than once gets a `$id` and
