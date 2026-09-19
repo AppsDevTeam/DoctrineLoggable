@@ -7,11 +7,13 @@ namespace ADT\DoctrineLoggable\Tests\DI;
 use ADT\DoctrineLoggable\Console\ConvertLegacyChangeSetsCommand;
 use ADT\DoctrineLoggable\DI\LoggableExtension;
 use ADT\DoctrineLoggable\Doctrine\ChangeSetType;
+use ADT\DoctrineLoggable\Entity\ChangeLog;
 use ADT\DoctrineLoggable\Listener\LoggableListener;
 use ADT\DoctrineLoggable\Serializer\ChangeSetSerializer;
 use ADT\DoctrineLoggable\Service\ChangeSetFactory;
 use ADT\DoctrineLoggable\Service\LegacyChangeSetConverter;
 use ADT\DoctrineLoggable\Tests\Fixtures\FakeUser;
+use ADT\DoctrineLoggable\Tests\Fixtures\LogEntryRecorder;
 use ADT\DoctrineLoggable\Tests\Fixtures\Money;
 use ADT\DoctrineLoggable\Tests\Fixtures\MoneyHandler;
 use ADT\DoctrineLoggable\Tests\Fixtures\TestConnectionFactory;
@@ -59,6 +61,20 @@ final class LoggableExtensionTest extends TestCase
 		self::assertEquals(new Money(3900, 'CZK'), $valueSerializer->decode($encoded));
 	}
 
+	public function testConfiguredCallbacksAreAttachedToTheListener(): void
+	{
+		$container = $this->createContainer(['onLogEntry' => [['@recorder', 'logEntry']]]);
+
+		$listener = $container->getByType(LoggableListener::class);
+		self::assertCount(1, $listener->onLogEntry);
+
+		$logEntry = new ChangeLog();
+		$entity = new \stdClass();
+		($listener->onLogEntry[0])($logEntry, $entity, true);
+
+		self::assertSame([[$logEntry, $entity, true]], $container->getByType(LogEntryRecorder::class)->recorded);
+	}
+
 	/**
 	 * @param array<string, mixed> $extensionConfig
 	 */
@@ -69,6 +85,7 @@ final class LoggableExtensionTest extends TestCase
 				'eventManager' => EventManager::class,
 				'connection' => new Statement([TestConnectionFactory::class, 'create']),
 				'user' => FakeUser::class,
+				'recorder' => LogEntryRecorder::class,
 			],
 		];
 

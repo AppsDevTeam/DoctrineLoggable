@@ -103,6 +103,48 @@ The change set graph may contain cycles. A change set referenced more than once 
 every further occurrence is written as `{"$ref": id}`. Change sets referenced just once, which is
 almost always the case, carry no ids at all.
 
+## Reacting to logged changes
+
+`LoggableListener::$onLogEntry` announces every stored change log row, so a change can be turned
+into something else - an audit trail record, a notification, a search index update. The library
+announces everything and filters nothing: which change matters is the consumer's business.
+
+```neon
+doctrineLoggable:
+	onLogEntry:
+		- [@App\Log\ChangeAuditSubscriber, logEntry]
+```
+
+```php
+class ChangeAuditSubscriber
+{
+	public function logEntry(ChangeLog $logEntry, object $entity, bool $announced): void
+	{
+		if (!$entity instanceof User) {
+			return;
+		}
+
+		$this->audit->record(
+			$logEntry->getObjectClass(),
+			$logEntry->getObjectId(),
+			$logEntry->getChangeSet(),
+		);
+	}
+}
+```
+
+The callback runs in `postFlush`, that is after the commit: what gets announced is in the database
+and `$logEntry->getId()` is already assigned.
+
+One entity has **one** change log row per request and every further flush that touches it grows
+that row. Such a row is announced again with `$announced` set to `TRUE`, and its change set is
+cumulative - it holds what the previous announcement carried as well. A consumer writing an
+append-only trail should therefore key on `$logEntry->getId()`: either skip the repeats, or write
+a record that supersedes the previous one. Calling `$em->clear()` starts over - entities logged
+afterwards get fresh rows announced with `$announced` set to `FALSE`.
+
+Flushing from inside the callback is safe; the nested `postFlush` announces nothing twice.
+
 ## Custom value types
 
 Values coming from custom Doctrine types (money, uuid, embeddables) end up in the `object` envelope,

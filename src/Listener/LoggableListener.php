@@ -5,8 +5,10 @@ namespace ADT\DoctrineLoggable\Listener;
 use ADT\DoctrineLoggable\Service\ChangeSetFactory;
 use Doctrine\Common\EventSubscriber;
 use Doctrine\Common\Util\ClassUtils;
+use ADT\DoctrineLoggable\Entity\ChangeLog;
 use Doctrine\ORM\Event\OnClearEventArgs;
 use Doctrine\ORM\Event\OnFlushEventArgs;
+use Doctrine\ORM\Event\PostFlushEventArgs;
 use Doctrine\ORM\Event\PostPersistEventArgs;
 use Doctrine\ORM\Exception\ORMException;
 use Doctrine\Persistence\Mapping\MappingException;
@@ -14,6 +16,21 @@ use ReflectionException;
 
 class LoggableListener implements EventSubscriber
 {
+	/**
+	 * Ohlásí zapsaný změnový záznam - odtud si ho odnese kdokoli, kdo z něj dělá
+	 * něco dalšího (auditní stopa, notifikace, indexace). Knihovna sama o žádném
+	 * z těch použití neví a nic nefiltruje: který záznam je pro odběratele
+	 * zajímavý, ví jenom on.
+	 *
+	 * Volá se z postFlush, tedy až po commitu: co se ohlásí, to v databázi je.
+	 * $announced je TRUE, pokud tentýž záznam už odběratel v tomto requestu
+	 * dostal a teď se jen rozrostl - podrobnosti viz
+	 * ChangeSetFactory::pullPendingLogEntries().
+	 *
+	 * @var list<callable(ChangeLog $logEntry, object $entity, bool $announced): void>
+	 */
+	public array $onLogEntry = [];
+
 	private ChangeSetFactory $changeSetFactory;
 
 	public function __construct(ChangeSetFactory $changeSetFactory)
@@ -25,6 +42,7 @@ class LoggableListener implements EventSubscriber
 	{
 		return [
 			'onFlush',
+			'postFlush',
 			'postPersist',
 			'onClear',
 		];
@@ -61,6 +79,19 @@ class LoggableListener implements EventSubscriber
 						$this->changeSetFactory->processLoggedEntity($loggableEntity, $entity);
 					}
 				}
+			}
+		}
+	}
+
+	public function postFlush(PostFlushEventArgs $args): void
+	{
+		if (!$this->onLogEntry) {
+			return;
+		}
+
+		foreach ($this->changeSetFactory->pullPendingLogEntries() as $pending) {
+			foreach ($this->onLogEntry as $callback) {
+				$callback($pending['logEntry'], $pending['entity'], $pending['announced']);
 			}
 		}
 	}

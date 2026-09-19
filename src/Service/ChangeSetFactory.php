@@ -47,6 +47,28 @@ class ChangeSetFactory
 	 */
 	protected array $logEntries = [];
 
+	/**
+	 * Logované entity ke svým záznamům, aby je odběratel dostal spolu se záznamem
+	 * a nemusel je dohledávat podle objectClass a objectId.
+	 *
+	 * @var array<string, object>
+	 */
+	private array $loggedEntities = [];
+
+	/**
+	 * Záznamy dotčené od posledního odběru, klíčované stejně jako $logEntries.
+	 *
+	 * @var array<string, true>
+	 */
+	private array $pendingLogEntries = [];
+
+	/**
+	 * Záznamy, které už odběratel jednou dostal - viz pullPendingLogEntries().
+	 *
+	 * @var array<string, true>
+	 */
+	private array $announcedLogEntries = [];
+
 	protected array $scheduledEntities = [];
 
 	/**
@@ -229,10 +251,45 @@ class ChangeSetFactory
 	public function onClear(): void
 	{
 		$this->logEntries = [];
+		$this->loggedEntities = [];
+		$this->pendingLogEntries = [];
+		$this->announcedLogEntries = [];
 		$this->identifications = [];
 		$this->computedEntityChangeSets = [];
 		$this->changeSetsInProgress = [];
 		$this->scheduledEntities = [];
+	}
+
+	/**
+	 * Vydá záznamy dotčené od posledního zavolání a označí je za vydané.
+	 *
+	 * Volá se z postFlush, tedy až po commitu - odběratel tak dostane jen změny,
+	 * které se opravdu zapsaly, a záznam už má přidělené id.
+	 *
+	 * Jedna entita má v rámci requestu JEDEN záznam, který se při každém dalším
+	 * flushi doplňuje. Takový záznam se proto vydá znovu s příznakem $announced,
+	 * a jeho změnový set je pokaždé kumulativní - obsahuje i to, co odběratel
+	 * dostal minule. Kdo staví append-only stopu, klíčuje na $logEntry->getId().
+	 *
+	 * @return list<array{logEntry: ChangeLog, entity: object, announced: bool}>
+	 */
+	public function pullPendingLogEntries(): array
+	{
+		$pending = [];
+		foreach (array_keys($this->pendingLogEntries) as $soh) {
+			$pending[] = [
+				'logEntry' => $this->logEntries[$soh],
+				'entity' => $this->loggedEntities[$soh],
+				'announced' => isset($this->announcedLogEntries[$soh]),
+			];
+			$this->announcedLogEntries[$soh] = true;
+		}
+
+		// vyprázdnit PŘED vrácením: odběratel může flushnout a tím spustit další
+		// postFlush, který by jinak vydal tytéž záznamy ještě jednou
+		$this->pendingLogEntries = [];
+
+		return $pending;
 	}
 
 	public function updateIdentification($entity): void
@@ -630,6 +687,8 @@ class ChangeSetFactory
 			$logEntry->setAction(CS\ChangeSet::ACTION_EDIT);
 		}
 		$logEntry->setChangeset($changeSet);
+		$this->loggedEntities[$soh] = $entity;
+		$this->pendingLogEntries[$soh] = true;
 		if (!isset($this->logEntries[$soh])) {
 			$this->em->persist($logEntry);
 			$this->em->getUnitOfWork()->computeChangeSet($this->em->getClassMetadata(get_class($logEntry)), $logEntry);

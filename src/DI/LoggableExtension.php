@@ -23,6 +23,9 @@ class LoggableExtension extends CompilerExtension
 		return Expect::structure([
 			// ADT\DoctrineLoggable\Serializer\ValueHandler implementations, tried before the built-in ones
 			'valueHandlers' => Expect::listOf(Expect::string()->dynamic()),
+			// callbacks over stored change log entries, e.g. onLogEntry: [[@auditSubscriber, logEntry]]
+			// - see LoggableListener::$onLogEntry
+			'onLogEntry' => Expect::listOf('mixed'),
 		]);
 	}
 
@@ -62,8 +65,13 @@ class LoggableExtension extends CompilerExtension
 
 		// intentionally registered here instead of in loadConfiguration to avoid autoregistration
 		// in nettrine dbal extension
-		$builder->addDefinition($this->prefix('listener'))
+		$listener = $builder->addDefinition($this->prefix('listener'))
 			->setFactory(LoggableListener::class);
+
+		foreach ($this->config->onLogEntry as $callback) {
+			$listener->addSetup('$onLogEntry[]', [$callback]);
+		}
+
 		$builder->getDefinition($builder->getByType(EventManager::class))
 			->addSetup('addEventSubscriber', ['@' . $this->prefix('listener')]);
 	}

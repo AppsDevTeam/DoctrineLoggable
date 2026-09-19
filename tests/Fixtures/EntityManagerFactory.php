@@ -49,6 +49,21 @@ final class EntityManagerFactory
 		return $em;
 	}
 
+	/**
+	 * The listener is not a service here, it lives in the event manager - this is how a test
+	 * gets to it to attach an $onLogEntry callback.
+	 */
+	public static function findListener(EntityManagerInterface $em): LoggableListener
+	{
+		foreach ($em->getEventManager()->getListeners('postFlush') as $listener) {
+			if ($listener instanceof LoggableListener) {
+				return $listener;
+			}
+		}
+
+		throw new \LogicException('The loggable listener is not registered.');
+	}
+
 	public static function findChangeLogs(EntityManagerInterface $em): array
 	{
 		return $em->getRepository(ChangeLog::class)->findBy([], ['id' => 'ASC']);
