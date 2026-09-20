@@ -5,6 +5,7 @@ namespace ADT\DoctrineLoggable\Entity;
 use ADT\DoctrineLoggable\ChangeSet\ChangeSet;
 use ADT\DoctrineLoggable\Doctrine\ChangeSetType;
 use DateTimeImmutable;
+use DateTimeZone;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Index(fields: ['objectClass', 'objectId'])]
@@ -39,9 +40,17 @@ class ChangeLog
 	#[ORM\Column(nullable: true)]
 	private ?int $identityId = null;
 
+	/**
+	 * Cas se uklada v UTC, ne v zone aplikace.
+	 *
+	 * Change log konci vedle ostatnich logu - typicky v oddelenem ulozisti, kam se odvazi
+	 * i request log nebo auditni stopa, a ty UTC pisou vzdycky. Kdyby si kazda tabulka
+	 * nesla jinou zonu, nedaly by se mezi sebou porovnat a nikde by to nebylo videt.
+	 * Uzivateli se cas stejne prevadi az pri zobrazeni.
+	 */
 	public function __construct()
 	{
-		$this->createdAt = new DateTimeImmutable();
+		$this->createdAt = new DateTimeImmutable('now', new DateTimeZone('UTC'));
 	}
 
 	public function getId(): int
