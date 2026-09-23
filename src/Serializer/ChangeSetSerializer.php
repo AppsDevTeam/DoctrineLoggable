@@ -74,8 +74,46 @@ class ChangeSetSerializer
 		}
 
 		$references = [];
+		$this->registerReferences($data, $references);
 
 		return $this->decodeChangeSet($data, $references);
+	}
+
+	/**
+	 * Zalozi prazdnou instanci pro kazde "$id" v dokumentu, jeste nez se cokoliv dekoduje.
+	 *
+	 * Dekodovat se musi dat i dokument, ve kterem "$ref" predchazi svemu "$id" - takove
+	 * v change_logu jsou. Odkazy se rozpoustely v poradi cteni, takze skoncily na vyjimce
+	 * "points to an unknown change set" a cely zaznam byl necitelny. Instance je tu drive
+	 * nez kterykoliv odkaz na ni, takze na poradi uz nezalezi; naplni se, az dojde
+	 * na uzel s "$id", a drzitel odkazu to vidi, protoze je to tentyz objekt.
+	 *
+	 * Odkaz na "$id", ktere v dokumentu nikde neni, zustava chybou - viz decodeChangeSet().
+	 *
+	 * @param array<string, mixed> $data
+	 * @param array<int, ChangeSet> $references
+	 */
+	private function registerReferences(array $data, array &$references): void
+	{
+		if (isset($data[self::KEY_ID])) {
+			$references[$data[self::KEY_ID]] ??= new ChangeSet();
+		}
+
+		foreach ($data['properties'] ?? [] as $property) {
+			if (!is_array($property)) {
+				continue;
+			}
+
+			if (isset($property['changeSet']) && is_array($property['changeSet'])) {
+				$this->registerReferences($property['changeSet'], $references);
+			}
+
+			foreach ($property['changeSets'] ?? [] as $nested) {
+				if (is_array($nested)) {
+					$this->registerReferences($nested, $references);
+				}
+			}
+		}
 	}
 
 	/**
@@ -213,12 +251,11 @@ class ChangeSetSerializer
 			return $references[$ref];
 		}
 
-		$changeSet = new ChangeSet();
-
-		// registered before the properties are decoded so that cycles resolve to this instance
-		if (isset($data[self::KEY_ID])) {
-			$references[$data[self::KEY_ID]] = $changeSet;
-		}
+		// instance uz existuje z registerReferences(), aby na ni sel odkaz i zpetne;
+		// cykly se diky tomu rozpousti na tentyz objekt jako driv
+		$changeSet = isset($data[self::KEY_ID])
+			? $references[$data[self::KEY_ID]] ??= new ChangeSet()
+			: new ChangeSet();
 
 		$changeSet->setAction($data['action'] ?? ChangeSet::ACTION_EDIT);
 		$changeSet->setIdentification($this->decodeId($data['entity'] ?? null));

@@ -273,6 +273,39 @@ final class ChangeSetSerializerTest extends TestCase
 		);
 	}
 
+	public function testReferenceIsResolvedEvenWhenItPrecedesItsDefinition(): void
+	{
+		// Takove zaznamy v change_logu jsou - "$ref" stoji driv nez "$id", na ktere ukazuje.
+		// Drive na nich cteni skoncilo vyjimkou a cely zaznam byl necitelny.
+		$data = [
+			'version' => 1,
+			'action' => 'edit',
+			'entity' => null,
+			'properties' => [
+				'reviewer' => ['type' => 'toOne', 'old' => null, 'new' => null, 'changeSet' => ['$ref' => 1]],
+				'author' => [
+					'type' => 'toOne',
+					'old' => null,
+					'new' => null,
+					'changeSet' => [
+						'$id' => 1,
+						'action' => 'edit',
+						'entity' => null,
+						'properties' => ['name' => ['type' => 'scalar', 'old' => 'Franta', 'new' => 'František']],
+					],
+				],
+			],
+		];
+
+		$decoded = $this->serializer->fromArray($data);
+
+		$author = $decoded->getChangedProperties()['author']->getChangeSet();
+		$reviewer = $decoded->getChangedProperties()['reviewer']->getChangeSet();
+
+		self::assertSame($author, $reviewer, 'Odkaz i definice jsou tentyz objekt');
+		self::assertSame('František', $author->getChangedProperties()['name']->getNew(), 'Odkaz vidi naplnena data');
+	}
+
 	public function testDanglingReferenceIsRejected(): void
 	{
 		$this->expectException(UnexpectedValueException::class);
