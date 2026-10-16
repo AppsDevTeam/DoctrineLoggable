@@ -12,11 +12,11 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
- * Covers the trickier identification fields: a date with a time, a date at midnight and a path
- * that walks into a collection.
+ * Covers the trickier identification fields: a date with a time, a date at midnight, an enum and
+ * a path that walks into a collection.
  */
 #[ORM\Entity]
-#[ADA\LoggableIdentification(fields: ['startsAt', 'wholeDayAt', 'tags.name'])]
+#[ADA\LoggableIdentification(fields: ['startsAt', 'wholeDayAt', 'state', 'tags.name'])]
 class Event
 {
 	#[ORM\Id]
@@ -29,6 +29,9 @@ class Event
 
 	#[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
 	private DateTimeImmutable $wholeDayAt;
+
+	#[ORM\Column(enumType: ArticleStateEnum::class)]
+	private ArticleStateEnum $state = ArticleStateEnum::Published;
 
 	/** @var Collection<int, Tag> */
 	#[ORM\ManyToMany(targetEntity: Tag::class)]
@@ -44,6 +47,11 @@ class Event
 	public function getId(): ?int
 	{
 		return $this->id;
+	}
+
+	public function getState(): ArticleStateEnum
+	{
+		return $this->state;
 	}
 
 	/** @return Collection<int, Tag> */

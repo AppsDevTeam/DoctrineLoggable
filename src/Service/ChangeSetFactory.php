@@ -7,6 +7,7 @@ use ADT\DoctrineLoggable\Attributes AS DLA;
 use ADT\DoctrineLoggable\ChangeSet\ChangeSet;
 use ADT\DoctrineLoggable\ChangeSet\ToMany;
 use ADT\DoctrineLoggable\Entity\ChangeLog;
+use BackedEnum;
 use DateTimeInterface;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\Common\Util\ClassUtils;
@@ -27,6 +28,7 @@ use ReflectionClass;
 use ReflectionException;
 use ReflectionProperty;
 use Traversable;
+use UnitEnum;
 
 class ChangeSetFactory
 {
@@ -638,6 +640,10 @@ class ChangeSetFactory
 			} else {
 				$value = $value->format('j.n.Y H:i');
 			}
+		} elseif ($value instanceof BackedEnum) {
+			$value = $value->value;
+		} elseif ($value instanceof UnitEnum) {
+			$value = $value->name;
 		}
 		return $value;
 	}

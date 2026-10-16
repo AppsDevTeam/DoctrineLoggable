@@ -136,6 +136,15 @@ final class ChangeSetFactoryTest extends TestCase
 		self::assertSame('27.8.2026', $identification['wholeDayAt']);
 	}
 
+	/**
+	 * Regrese: an enum field in the identification ended up in implode() and failed with
+	 * "Object of class ... could not be converted to string".
+	 */
+	public function testAnEnumIdentificationIsItsValue(): void
+	{
+		self::assertSame('published', $this->factory->createIdentification(new Event())->getIdentification()['state']);
+	}
+
 	public function testAPathIntoACollectionJoinsEveryValue(): void
 	{
 		$event = new Event();
