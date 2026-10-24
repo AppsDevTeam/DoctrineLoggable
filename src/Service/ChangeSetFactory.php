@@ -235,9 +235,7 @@ class ChangeSetFactory
 	public function isEntityLogged($entityClass)
 	{
 		if (!array_key_exists($entityClass, $this->loggableEntityClasses)) {
-			$reflection = new ReflectionClass($entityClass);
-			$an = $this->reader->getClassAttribute($reflection, DLA\LoggableEntity::class);
-			$this->loggableEntityClasses[$entityClass] = (bool) $an;
+			$this->loggableEntityClasses[$entityClass] = (bool) $this->findLoggableEntityAttributes($entityClass);
 		}
 		return $this->loggableEntityClasses[$entityClass];
 	}
@@ -248,11 +246,43 @@ class ChangeSetFactory
 	public function isCreateLogged(string $entityClass): bool
 	{
 		if (!array_key_exists($entityClass, $this->createLoggedClasses)) {
-			/** @var DLA\LoggableEntity|null $attribute */
-			$attribute = $this->reader->getClassAttribute(new ReflectionClass($entityClass), DLA\LoggableEntity::class);
-			$this->createLoggedClasses[$entityClass] = $attribute?->logCreate ?? false;
+			$logCreate = false;
+			foreach ($this->findLoggableEntityAttributes($entityClass) as $attribute) {
+				$logCreate = $logCreate || $attribute->logCreate;
+			}
+			$this->createLoggedClasses[$entityClass] = $logCreate;
 		}
 		return $this->createLoggedClasses[$entityClass];
+	}
+
+	/**
+	 * #[LoggableEntity] ze třídy, jejích rodičů i rozhraní.
+	 *
+	 * PHP atributy nedědí, ale knihovna, která entity definuje rozhraním a traitou (třída
+	 * je až v projektu), jinak nemá kam napsat, že se její entity logují - třeba že se
+	 * kvůli auditní stopě musí logovat i jejich založení. Atributy se neprobíjejí, sčítají:
+	 * entita se loguje, když ho nese kdokoliv v hierarchii, a založení, když ho kdokoliv
+	 * zapne. Jinak by obyčejné #[LoggableEntity], které projekt na třídě už má, tiše
+	 * vypnulo to, co požaduje rozhraní.
+	 *
+	 * @return list<DLA\LoggableEntity>
+	 * @throws ReflectionException
+	 */
+	private function findLoggableEntityAttributes(string $entityClass): array
+	{
+		$reflection = new ReflectionClass($entityClass);
+		$classes = [...$reflection->getInterfaces()];
+		for ($class = $reflection; $class !== false; $class = $class->getParentClass()) {
+			$classes[] = $class;
+		}
+
+		$attributes = [];
+		foreach ($classes as $class) {
+			if ($attribute = $this->reader->getClassAttribute($class, DLA\LoggableEntity::class)) {
+				$attributes[] = $attribute;
+			}
+		}
+		return $attributes;
 	}
 
 	/**

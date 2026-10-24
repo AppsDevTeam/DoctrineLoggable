@@ -20,6 +20,7 @@ use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Cover;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Issue;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Logo;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Member;
+use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Newsletter;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Poll;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Series;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Tag;
@@ -396,6 +397,24 @@ final class LoggableListenerTest extends TestCase
 		self::assertNull($properties['author']->getOld());
 		self::assertSame((string) $author->getId(), $properties['author']->getNew()->getId());
 		self::assertSame((string) $tag->getId(), $properties['tags']->getAdded()[0]->getId());
+	}
+
+	public function testAnEntityLoggedThroughItsInterfaceIsLogged(): void
+	{
+		$newsletter = new Newsletter('Pivní novinky');
+		$this->em->persist($newsletter);
+		$this->em->flush();
+
+		$newsletter->setName('Pivní noviny');
+		$this->em->flush();
+
+		$this->em->clear();
+		$logs = EntityManagerFactory::findChangeLogs($this->em);
+
+		self::assertCount(1, $logs);
+		self::assertSame(Newsletter::class, $logs[0]->getObjectClass());
+		self::assertSame(ChangeSet::ACTION_CREATE, $logs[0]->getAction());
+		self::assertSame('Pivní noviny', $logs[0]->getChangeSet()->getChangedProperties()['name']->getNew());
 	}
 
 	public function testCreationIsLoggedEvenWithoutAnyLoggedValue(): void

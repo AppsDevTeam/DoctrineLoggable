@@ -9,9 +9,11 @@ use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Article;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Author;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Comment;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Cover;
+use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Digest;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Event;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Logo;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Member;
+use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Newsletter;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Series;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Tag;
 use ADT\DoctrineLoggable\Tests\Fixtures\EntityManagerFactory;
@@ -49,6 +51,21 @@ final class ChangeSetFactoryTest extends TestCase
 		self::assertTrue($this->factory->isCreateLogged(Member::class));
 		self::assertFalse($this->factory->isCreateLogged(Article::class));
 		self::assertFalse($this->factory->isCreateLogged(Author::class));
+	}
+
+	public function testTheAttributeIsReadFromAnInterfaceToo(): void
+	{
+		self::assertTrue($this->factory->isEntityLogged(Newsletter::class));
+		self::assertTrue($this->factory->isCreateLogged(Newsletter::class));
+	}
+
+	/**
+	 * The attributes add up instead of overriding each other.
+	 */
+	public function testAPlainAttributeOnTheClassKeepsTheCreationLoggingOfItsInterface(): void
+	{
+		self::assertTrue($this->factory->isEntityLogged(Digest::class));
+		self::assertTrue($this->factory->isCreateLogged(Digest::class));
 	}
 
 	public function testIdentificationCarriesTheClassIdAndTheConfiguredFields(): void
