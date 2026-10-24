@@ -11,6 +11,7 @@ use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Comment;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Cover;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Event;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Logo;
+use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Member;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Series;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Tag;
 use ADT\DoctrineLoggable\Tests\Fixtures\EntityManagerFactory;
@@ -41,6 +42,13 @@ final class ChangeSetFactoryTest extends TestCase
 		self::assertTrue($this->factory->isEntityLogged(Article::class));
 		self::assertFalse($this->factory->isEntityLogged(Author::class));
 		self::assertFalse($this->factory->isEntityLogged(Tag::class));
+	}
+
+	public function testCreationIsLoggedOnlyWhenTheEntityAsksForIt(): void
+	{
+		self::assertTrue($this->factory->isCreateLogged(Member::class));
+		self::assertFalse($this->factory->isCreateLogged(Article::class));
+		self::assertFalse($this->factory->isCreateLogged(Author::class));
 	}
 
 	public function testIdentificationCarriesTheClassIdAndTheConfiguredFields(): void

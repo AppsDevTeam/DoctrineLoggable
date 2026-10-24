@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace ADT\DoctrineLoggable\Tests\Listener;
 
+use ADT\DoctrineLoggable\ChangeSet\ChangeSet;
 use ADT\DoctrineLoggable\Entity\ChangeLog;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Article;
+use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Member;
 use ADT\DoctrineLoggable\Tests\Fixtures\EntityManagerFactory;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
@@ -65,6 +67,24 @@ final class LogEntryHookTest extends TestCase
 
 		$properties = $logEntry->getChangeSet()->getChangedProperties();
 		self::assertSame('Pivo 12°', $properties['title']->getNew());
+	}
+
+	/**
+	 * The consumer gets the row of a creation with the id the entity got from the insert.
+	 */
+	public function testCreationIsAnnouncedWithTheObjectId(): void
+	{
+		$member = new Member('franta@example.com');
+		$this->em->persist($member);
+		$this->em->flush();
+
+		self::assertCount(1, $this->announced);
+		[$logEntry, $entity] = $this->announced[0];
+
+		self::assertSame($member, $entity);
+		self::assertSame(ChangeSet::ACTION_CREATE, $logEntry->getAction());
+		self::assertSame($member->getId(), $logEntry->getObjectId());
+		self::assertSame((string) $member->getId(), $logEntry->getChangeSet()->getIdentification()->getId());
 	}
 
 	public function testUntouchedEntryIsNotAnnouncedAgain(): void

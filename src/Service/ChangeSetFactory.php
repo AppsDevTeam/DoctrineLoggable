@@ -6,6 +6,7 @@ use ADT\DoctrineLoggable\ChangeSet AS CS;
 use ADT\DoctrineLoggable\Attributes AS DLA;
 use ADT\DoctrineLoggable\ChangeSet\ChangeSet;
 use ADT\DoctrineLoggable\ChangeSet\ToMany;
+use ADT\DoctrineLoggable\Doctrine\ChangeSetType;
 use ADT\DoctrineLoggable\Entity\ChangeLog;
 use BackedEnum;
 use DateTimeInterface;
@@ -40,6 +41,13 @@ class ChangeSetFactory
 
 	protected array $loggableEntityClasses = [];
 
+	/**
+	 * Třídy, u kterých se loguje i založení - viz LoggableEntity::$logCreate.
+	 *
+	 * @var array<class-string, bool>
+	 */
+	private array $createLoggedClasses = [];
+
 	protected array $loggableEntityProperties = [];
 
 	/**
@@ -70,6 +78,19 @@ class ChangeSetFactory
 	 * @var array<string, true>
 	 */
 	private array $announcedLogEntries = [];
+
+	/**
+	 * Záznamy zapsané v probíhajícím flushi - po commitu se do nich doplní, co při
+	 * zápisu ještě nebylo známo, viz completeLogEntries().
+	 *
+	 * @var array<string, true>
+	 */
+	private array $flushedLogEntries = [];
+
+	/**
+	 * Dostala v probíhajícím flushi některá identifikace id až po insertu?
+	 */
+	private bool $identificationsCompleted = false;
 
 	protected array $scheduledEntities = [];
 
@@ -223,17 +244,39 @@ class ChangeSetFactory
 
 	/**
 	 * @throws ReflectionException
+	 */
+	public function isCreateLogged(string $entityClass): bool
+	{
+		if (!array_key_exists($entityClass, $this->createLoggedClasses)) {
+			/** @var DLA\LoggableEntity|null $attribute */
+			$attribute = $this->reader->getClassAttribute(new ReflectionClass($entityClass), DLA\LoggableEntity::class);
+			$this->createLoggedClasses[$entityClass] = $attribute?->logCreate ?? false;
+		}
+		return $this->createLoggedClasses[$entityClass];
+	}
+
+	/**
+	 * @throws ReflectionException
 	 * @throws ORMException
 	 */
 	public function processLoggedEntity($entity, $relatedEntity = null): void
 	{
-		// pokud primarni entita nema id, nelogujeme, je to vlozeni
-		if (!$this->getIdentifier($entity)) {
+		$entityClass = ClassUtils::getClass($entity);
+
+		// primarni entita bez id je vlozeni s id z databaze - loguje se, jen kdyz si o to
+		// entita rekne; id se do zaznamu doplni po commitu, viz completeLogEntries()
+		if (!$this->getIdentifier($entity) && !$this->isCreateLogged($entityClass)) {
 			return;
 		}
 
 		$changeSet = $this->getChangeSet($entity, $relatedEntity);
-		if (!$changeSet->isChanged()) {
+		$logged = match ($changeSet->getAction()) {
+			// smazani zadnou vlastnost nemeni, a presto se loguje - po nem uz data nikde nejsou
+			CS\ChangeSet::ACTION_DELETE => true,
+			CS\ChangeSet::ACTION_CREATE => $changeSet->isChanged() || $this->isCreateLogged($entityClass),
+			default => $changeSet->isChanged(),
+		};
+		if (!$logged) {
 			return;
 		}
 		$this->updateLogEntry($entity, $changeSet);
@@ -256,6 +299,8 @@ class ChangeSetFactory
 		$this->loggedEntities = [];
 		$this->pendingLogEntries = [];
 		$this->announcedLogEntries = [];
+		$this->flushedLogEntries = [];
+		$this->identificationsCompleted = false;
 		$this->identifications = [];
 		$this->computedEntityChangeSets = [];
 		$this->changeSetsInProgress = [];
@@ -304,6 +349,66 @@ class ChangeSetFactory
 
 			$identification = $this->identifications[$oid];
 			$identification->setId(implode('-', $id));
+			$this->identificationsCompleted = true;
+		}
+	}
+
+	/**
+	 * Doplní do záznamů zapsaných v právě dokončeném flushi, co při jejich zápisu ještě
+	 * nebylo známo. Volá se z postFlush, před ohlášením záznamů.
+	 *
+	 * Entita s id z databáze ho dostane až insertem, a ten proběhne až po onFlush, kde se
+	 * záznam počítá. Záznam o založení entity proto vzniká bez object_id a identifikace
+	 * entit vložených v témže flushi bez id - postPersist je doplní jen do objektů, už
+	 * zapsaného řádku se nedotkne. Řádek se proto přepíše přímo přes DBAL: flush z postFlush
+	 * Doctrine nepodporuje a změnu změnového setu by beztak neviděl, je to pořád tatáž
+	 * instance.
+	 *
+	 * Neběží v transakci flushe, ta je už potvrzená. Kdyby přepis selhal, zůstane v databázi
+	 * řádek bez object_id - založení je pořád dohledatelné podle identifikace.
+	 */
+	public function completeLogEntries(): void
+	{
+		$flushed = $this->flushedLogEntries;
+		$identificationsCompleted = $this->identificationsCompleted;
+		$this->flushedLogEntries = [];
+		$this->identificationsCompleted = false;
+
+		if (!$flushed) {
+			return;
+		}
+
+		$metadata = $this->em->getClassMetadata(ChangeLog::class);
+		foreach (array_keys($flushed) as $soh) {
+			$logEntry = $this->logEntries[$soh];
+
+			// flush selhal driv, nez se radek zapsal
+			if (!$metadata->getIdentifierValues($logEntry)) {
+				continue;
+			}
+
+			$objectIdCompleted = false;
+			if ($logEntry->getObjectId() === null && ($objectId = $this->getIdentifier($this->loggedEntities[$soh])) !== null) {
+				$logEntry->setObjectId($objectId);
+				$objectIdCompleted = true;
+			}
+
+			if (!$objectIdCompleted && !$identificationsCompleted) {
+				continue;
+			}
+
+			$this->em->getConnection()->update(
+				$metadata->getTableName(),
+				[
+					$metadata->getColumnName('objectId') => $logEntry->getObjectId(),
+					$metadata->getColumnName('changeSet') => $logEntry->getChangeSet(),
+				],
+				[$metadata->getSingleIdentifierColumnName() => $logEntry->getId()],
+				[$metadata->getColumnName('changeSet') => ChangeSetType::NAME],
+			);
+
+			// jinak by dalsi flush object_id povazoval za zmenu a zapsal ho znovu
+			$this->em->getUnitOfWork()->setOriginalEntityProperty(spl_object_id($logEntry), 'objectId', $logEntry->getObjectId());
 		}
 	}
 
@@ -323,19 +428,21 @@ class ChangeSetFactory
 		if (isset($this->computedEntityChangeSets[$sploh])) {
 			$changeSet = $this->computedEntityChangeSets[$sploh];
 
+			// entita z drivejsiho flushe se ted maze - jeji zaznam se tim meni na smazani
+			if ($this->uow->isScheduledForDelete($entity)) {
+				$changeSet->setAction(CS\ChangeSet::ACTION_DELETE);
+			}
+
 		} else {
 			$changeSet = new CS\ChangeSet();
 			$changeSet->setIdentification($this->createIdentification($entity));
 			$this->computedEntityChangeSets[$sploh] = $changeSet;
 
-			$insertions = $this->uow->getScheduledEntityInsertions();
-			if (isset($insertions[$sploh])) {
+			// naplanovane entity UnitOfWork klicuje pres spl_object_id, ne pres hash jako tahle trida
+			if ($this->uow->isScheduledForInsert($entity)) {
 				$changeSet->setAction(CS\ChangeSet::ACTION_CREATE);
-			} else {
-				$deletions = $this->uow->getScheduledEntityDeletions();
-				if (isset($deletions[$sploh])) {
-					$changeSet->setAction(CS\ChangeSet::ACTION_DELETE);
-				}
+			} elseif ($this->uow->isScheduledForDelete($entity)) {
+				$changeSet->setAction(CS\ChangeSet::ACTION_DELETE);
 			}
 		}
 
@@ -711,11 +818,12 @@ class ChangeSetFactory
 			$logEntry->setIdentityId($this->userIdProvider->getId());
 			$logEntry->setObjectClass($this->em->getClassMetadata(get_class($entity))->name);
 			$logEntry->setObjectId($this->getIdentifier($entity));
-			$logEntry->setAction(CS\ChangeSet::ACTION_EDIT);
 		}
+		$logEntry->setAction($changeSet->getAction());
 		$logEntry->setChangeset($changeSet);
 		$this->loggedEntities[$soh] = $entity;
 		$this->pendingLogEntries[$soh] = true;
+		$this->flushedLogEntries[$soh] = true;
 		if (!isset($this->logEntries[$soh])) {
 			$this->em->persist($logEntry);
 			$this->em->getUnitOfWork()->computeChangeSet($this->em->getClassMetadata(get_class($logEntry)), $logEntry);

@@ -19,6 +19,7 @@ use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Chapter;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Cover;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Issue;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Logo;
+use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Member;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Poll;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Series;
 use ADT\DoctrineLoggable\Tests\Fixtures\Entity\Tag;
@@ -313,21 +314,142 @@ final class LoggableListenerTest extends TestCase
 	}
 
 	/**
-	 * Documents a gap, not a wanted behaviour: ChangeSet::ACTION_DELETE exists, but a deletion
-	 * produces no property change, so the change set is empty and no row is written at all.
+	 * A deletion changes no property, and yet it is logged - afterwards the data is gone and
+	 * the change log is the only trace of it.
 	 */
-	public function testDeletingALoggedEntityWritesNoRow(): void
+	public function testDeletingALoggedEntityIsLogged(): void
 	{
 		$article = new Article('Pivo');
 		$article->addTag($tag = new Tag('akce'));
 		$this->em->persist($tag);
 		$this->em->persist($article);
 		$this->em->flush();
+		$articleId = $article->getId();
 
 		$this->em->remove($article);
 		$this->em->flush();
 
-		self::assertSame([], EntityManagerFactory::findChangeLogs($this->em));
+		$this->em->clear();
+		$logs = EntityManagerFactory::findChangeLogs($this->em);
+
+		self::assertCount(1, $logs);
+		self::assertSame(ChangeSet::ACTION_DELETE, $logs[0]->getAction());
+		self::assertSame($articleId, $logs[0]->getObjectId());
+
+		$changeSet = $logs[0]->getChangeSet();
+		self::assertSame(ChangeSet::ACTION_DELETE, $changeSet->getAction());
+		self::assertSame((string) $articleId, $changeSet->getIdentification()->getId());
+		self::assertSame(['title' => 'Pivo'], $changeSet->getIdentification()->getIdentification());
+	}
+
+	public function testAnEntityEditedAndThenDeletedInOneRequestEndsUpAsADeletion(): void
+	{
+		$article = new Article('Pivo');
+		$this->em->persist($article);
+		$this->em->flush();
+
+		$article->setTitle('Pivo 12°');
+		$this->em->flush();
+
+		$this->em->remove($article);
+		$this->em->flush();
+
+		$this->em->clear();
+		$logs = EntityManagerFactory::findChangeLogs($this->em);
+
+		self::assertCount(1, $logs);
+		self::assertSame(ChangeSet::ACTION_DELETE, $logs[0]->getAction());
+		self::assertSame('Pivo 12°', $logs[0]->getChangeSet()->getChangedProperties()['title']->getNew());
+	}
+
+	public function testCreationIsLoggedWhenTheEntityAsksForIt(): void
+	{
+		$member = new Member('franta@example.com');
+		$member->setNickname('Franta');
+		$member->setAuthor($author = new Author('Franta'));
+		$member->addTag($tag = new Tag('akce'));
+		$this->em->persist($author);
+		$this->em->persist($tag);
+		$this->em->persist($member);
+		$this->em->flush();
+
+		self::assertNotNull($member->getId());
+
+		$this->em->clear();
+		$logs = EntityManagerFactory::findChangeLogs($this->em);
+
+		self::assertCount(1, $logs);
+		self::assertSame(Member::class, $logs[0]->getObjectClass());
+		self::assertSame(ChangeSet::ACTION_CREATE, $logs[0]->getAction());
+
+		// the id comes from the insert, which runs after the row has been computed
+		self::assertSame($member->getId(), $logs[0]->getObjectId());
+
+		$changeSet = $logs[0]->getChangeSet();
+		self::assertSame(ChangeSet::ACTION_CREATE, $changeSet->getAction());
+		self::assertSame((string) $member->getId(), $changeSet->getIdentification()->getId());
+		self::assertSame(['email' => 'franta@example.com'], $changeSet->getIdentification()->getIdentification());
+
+		$properties = $changeSet->getChangedProperties();
+		self::assertNull($properties['nickname']->getOld());
+		self::assertSame('Franta', $properties['nickname']->getNew());
+		self::assertNull($properties['author']->getOld());
+		self::assertSame((string) $author->getId(), $properties['author']->getNew()->getId());
+		self::assertSame((string) $tag->getId(), $properties['tags']->getAdded()[0]->getId());
+	}
+
+	public function testCreationIsLoggedEvenWithoutAnyLoggedValue(): void
+	{
+		$member = new Member('franta@example.com');
+		$this->em->persist($member);
+		$this->em->flush();
+
+		$logs = EntityManagerFactory::findChangeLogs($this->em);
+
+		self::assertCount(1, $logs);
+		self::assertSame(ChangeSet::ACTION_CREATE, $logs[0]->getAction());
+		self::assertSame($member->getId(), $logs[0]->getObjectId());
+	}
+
+	/**
+	 * The id is filled in behind the back of the unit of work; a further flush must not take
+	 * it for a change of its own and the row must keep growing as one.
+	 */
+	public function testACreatedEntityEditedInALaterFlushStaysOneCreation(): void
+	{
+		$member = new Member('franta@example.com');
+		$this->em->persist($member);
+		$this->em->flush();
+		$this->em->flush();
+
+		$member->setNickname('Franta');
+		$this->em->flush();
+
+		$this->em->clear();
+		$logs = EntityManagerFactory::findChangeLogs($this->em);
+
+		self::assertCount(1, $logs);
+		self::assertSame(ChangeSet::ACTION_CREATE, $logs[0]->getAction());
+		self::assertSame($member->getId(), $logs[0]->getObjectId());
+		self::assertSame('Franta', $logs[0]->getChangeSet()->getChangedProperties()['nickname']->getNew());
+	}
+
+	public function testACreatedAndThenDeletedEntityEndsUpAsADeletion(): void
+	{
+		$member = new Member('franta@example.com');
+		$this->em->persist($member);
+		$this->em->flush();
+		$memberId = $member->getId();
+
+		$this->em->remove($member);
+		$this->em->flush();
+
+		$this->em->clear();
+		$logs = EntityManagerFactory::findChangeLogs($this->em);
+
+		self::assertCount(1, $logs);
+		self::assertSame(ChangeSet::ACTION_DELETE, $logs[0]->getAction());
+		self::assertSame($memberId, $logs[0]->getObjectId());
 	}
 
 	public function testChangingAnEntityBehindAnInverseOneToOneIsLoggedOnTheOwner(): void
@@ -370,9 +492,8 @@ final class LoggableListenerTest extends TestCase
 		self::assertNull($logged->getOld());
 		self::assertSame(['name' => 'Franta'], $logged->getNew()->getIdentification());
 
-		// documents a gap: the identification of an entity inserted in this very flush is built
-		// before the insert runs, and postPersist updates the object too late for the stored row
-		self::assertSame('', $logged->getNew()->getId());
+		// the identification is built before the insert runs; the id is filled in after the commit
+		self::assertSame((string) $author->getId(), $logged->getNew()->getId());
 	}
 
 	public function testTheStoredJsonIsValidAndCarriesTheFormatVersion(): void

@@ -85,6 +85,8 @@ class LoggableListener implements EventSubscriber
 
 	public function postFlush(PostFlushEventArgs $args): void
 	{
+		$this->changeSetFactory->completeLogEntries();
+
 		if (!$this->onLogEntry) {
 			return;
 		}
