@@ -4,7 +4,7 @@ namespace ADT\DoctrineLoggable\Listener;
 
 use ADT\DoctrineLoggable\Service\ChangeSetFactory;
 use Doctrine\Common\EventSubscriber;
-use Doctrine\Common\Util\ClassUtils;
+use ADT\DoctrineLoggable\Doctrine\EntityClass;
 use ADT\DoctrineLoggable\Entity\ChangeLog;
 use Doctrine\ORM\Event\OnClearEventArgs;
 use Doctrine\ORM\Event\OnFlushEventArgs;
@@ -68,7 +68,7 @@ class LoggableListener implements EventSubscriber
 
 		foreach (['getScheduledEntityInsertions', 'getScheduledEntityUpdates', 'getScheduledEntityDeletions'] as $method) {
 			foreach (call_user_func([$uow, $method]) as $entity) {
-				$entityClass = ClassUtils::getClass($entity);
+				$entityClass = EntityClass::of($entity);
 				// jedna se o entitu s anotaci loggableEntity
 				if ($this->changeSetFactory->isEntityLogged($entityClass)) {
 					$this->changeSetFactory->processLoggedEntity($entity);

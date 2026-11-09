@@ -7,11 +7,11 @@ use ADT\DoctrineLoggable\Attributes AS DLA;
 use ADT\DoctrineLoggable\ChangeSet\ChangeSet;
 use ADT\DoctrineLoggable\ChangeSet\ToMany;
 use ADT\DoctrineLoggable\Doctrine\ChangeSetType;
+use ADT\DoctrineLoggable\Doctrine\EntityClass;
 use ADT\DoctrineLoggable\Entity\ChangeLog;
 use BackedEnum;
 use DateTimeInterface;
 use Doctrine\Common\Collections\Collection;
-use Doctrine\Common\Util\ClassUtils;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Exception\ORMException;
 use Doctrine\ORM\Mapping\ClassMetadata;
@@ -200,7 +200,7 @@ class ChangeSetFactory
 	 */
 	public function getLoggableEntityFromAssociationStructure($associationEntity)
 	{
-		$associationEntityClassName = ClassUtils::getClass($associationEntity);
+		$associationEntityClassName = EntityClass::of($associationEntity);
 		foreach($this->associationStructure[$associationEntityClassName] as $propertyStructure) {
 			if (is_array($propertyStructure)) {
 				foreach ($propertyStructure as $propertyName) {
@@ -291,7 +291,7 @@ class ChangeSetFactory
 	 */
 	public function processLoggedEntity($entity, $relatedEntity = null): void
 	{
-		$entityClass = ClassUtils::getClass($entity);
+		$entityClass = EntityClass::of($entity);
 
 		// primarni entita bez id je vlozeni s id z databaze - loguje se, jen kdyz si o to
 		// entita rekne; id se do zaznamu doplni po commitu, viz completeLogEntries()
@@ -374,7 +374,7 @@ class ChangeSetFactory
 		$oid = spl_object_hash($entity);
 		if (array_key_exists($oid, $this->identifications)) {
 
-			$metadata = $this->em->getClassMetadata(ClassUtils::getClass($entity));
+			$metadata = $this->em->getClassMetadata(EntityClass::of($entity));
 			$id = $metadata->getIdentifierValues($entity);
 
 			$identification = $this->identifications[$oid];
@@ -503,7 +503,7 @@ class ChangeSetFactory
 	{
 		$uowEntiyChangeSet = $this->uow->getEntityChangeSet($entity);
 		// u proxy vraci get_class tridu proxy, ta ma vlastni properties s cizimi atributy
-		foreach ($this->getLoggedProperties(ClassUtils::getClass($entity)) as $property) {
+		foreach ($this->getLoggedProperties(EntityClass::of($entity)) as $property) {
 			// hodnota se nelogovat nema - zbyde jen informace, ze se vlastnost zmenila.
 			// Musi to byt pred vetvenim na typ: rozhoduje jen to, jestli Doctrine zmenu
 			// hlasi, a co je to za sloupec uz je jedno, protoze se stejne nezaznamena.
@@ -631,7 +631,7 @@ class ChangeSetFactory
 			return $collection->contains($relatedEntity);
 		}
 
-		$owner = $this->em->getClassMetadata(ClassUtils::getClass($relatedEntity))
+		$owner = $this->em->getClassMetadata(EntityClass::of($relatedEntity))
 			->getFieldValue($relatedEntity, $mappedBy);
 
 		return $owner === $collection->getOwner();
@@ -652,7 +652,7 @@ class ChangeSetFactory
 		/** @var OneToOne $oneToOneAnnotation */
 		$oneToOneAnnotation = $this->reader->getPropertyAttribute($property, OneToOne::class);
 
-		$relatedEntity = $this->em->getClassMetadata(ClassUtils::getClass($entity))->getFieldValue($entity, $property->name);
+		$relatedEntity = $this->em->getClassMetadata(EntityClass::of($entity))->getFieldValue($entity, $property->name);
 		$newIdentification = $oldIdentification = $this->createIdentification($relatedEntity);
 
 		// owning side (ManyToOne is always owning side, OneToOne only if inversedBy is set (or nothing set - unidirectional)
@@ -673,7 +673,7 @@ class ChangeSetFactory
 			$changeSet = $this->getChangeSet($relatedEntity);
 
 			$ownerProperty = $oneToOneAnnotation->mappedBy;
-			$ownerClass = $this->em->getClassMetadata(ClassUtils::getClass($entity))
+			$ownerClass = $this->em->getClassMetadata(EntityClass::of($entity))
 				->getAssociationTargetClass($property->name);
 			$identityMap = $this->uow->getIdentityMap();
 			if (isset($identityMap[$ownerClass])) {
@@ -717,7 +717,7 @@ class ChangeSetFactory
 		}
 		$entityHash = spl_object_hash($entity);
 		if (!isset($this->identifications[$entityHash])) {
-			$class = ClassUtils::getClass($entity);
+			$class = EntityClass::of($entity);
 			$metadata = $this->em->getClassMetadata($class);
 			/** @var DLA\LoggableIdentification $identificationAnnotation */
 			$identificationAnnotation = $this->reader->getClassAttribute(new ReflectionClass($class), DLA\LoggableIdentification::class);
@@ -744,7 +744,7 @@ class ChangeSetFactory
 							if (method_exists($value, $getter)) {
 								$fieldValue = $value->$getter();
 							} else {
-								$fieldValue = $this->em->getClassMetadata(ClassUtils::getClass($value))
+								$fieldValue = $this->em->getClassMetadata(EntityClass::of($value))
 									->getFieldValue($value, $fieldNamePart);
 							}
 							if (is_array($fieldValue) || $fieldValue instanceof Traversable) {
@@ -844,7 +844,7 @@ class ChangeSetFactory
 		$logEntry = $this->logEntries[$soh] ?? null;
 		if (!$logEntry) {
 			$logEntry = new ChangeLog();
-			$logEntry->setIdentityClass($this->userIdProvider->getId() ? ClassUtils::getClass($this->userIdProvider->getIdentity()) : null);
+			$logEntry->setIdentityClass($this->userIdProvider->getId() ? EntityClass::of($this->userIdProvider->getIdentity()) : null);
 			$logEntry->setIdentityId($this->userIdProvider->getId());
 			$logEntry->setObjectClass($this->em->getClassMetadata(get_class($entity))->name);
 			$logEntry->setObjectId($this->getIdentifier($entity));
